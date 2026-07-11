@@ -1,4 +1,4 @@
-# Daily-Flight-Card
+# GAMA KSS Daily Flight Card
 
 A self-contained web app (single `index.html`, no server, no accounts) replacing the paper kneeboard daily flight card. Runs entirely on the device: all data stays in the phone's local storage, nothing is uploaded anywhere. Deployed on GitHub Pages; add to the iPhone home screen via Safari → Share → **Add to Home Screen**.
 
@@ -48,23 +48,37 @@ Rows appear as used; the first empty row is always shown as the working flight; 
 
 Phone GPS gives a WGS84 latitude/longitude. Converted **fully offline** to OSGB36 via a 7-parameter Helmert transformation, then projected to National Grid (Transverse Mercator, Airy 1830 ellipsoid), and truncated to a six-figure reference (100 m precision). Verified against Ben Nevis (NN 166 712), St Paul's Cathedral (TQ 320 811) and Redhill Aerodrome (TQ 301 476). Positional error of the datum transformation is ≤ ~5 m — negligible at six-figure precision; the dominant error is the phone GPS fix itself.
 
-### 1.5 Per-flight gross weight and performance margin
+### 1.5 Per-flight departure gross weight and performance margin
 
-Shown under each flight row once the inputs exist, and printed on the PDF.
+Shown under each flight row once the inputs exist, and printed on the PDF. This is a **departure** weight — the figure the SRP >4600 notation and PERF margin are judged against. This is post-flight data collation, not a planning tool.
+
+Departure fuel for flight *N* is inferred:
+
+| Situation | Departure fuel assumed |
+|---|---|
+| Flight 1 of the card | PLANNED FUEL KG |
+| Previous flight has REFUEL ticked | PLANNED FUEL KG (refuelled back to plan) |
+| Otherwise | Previous flight's FUEL KG (its landed fuel) |
 
 ```
-GW(flight)   = GW DEP + (FUEL KG − PLANNED FUEL) + PATIENT KG
-PERF(flight) = VAR TOW − GW(flight)
+DEP GW(flight) = GW DEP + (departure fuel − PLANNED FUEL) + PATIENT KG
+PERF(flight)   = VAR TOW − DEP GW(flight)
 ```
 
-- `(FUEL KG − PLANNED FUEL)` is the fuel delta versus the planned load — negative after burn-off, so GW falls through the sortie.
 - `PATIENT KG` counts only on HEMS rows (0 otherwise).
-- **This assumes GW DEP includes the planned fuel.** If your GW DEP figure is zero-fuel or block-fuel based, the delta is wrong — check this against how your mass & balance output is defined.
+- **Assumes GW DEP includes the planned fuel**, and that every refuel brings fuel exactly back to the planned load. A partial or over-plan refuel breaks the inference for the following flight — check manually.
+- Flight 1's DEP GW appears as soon as the header is filled: it is simply `GW DEP (+ patient)`.
 
-**Worked example:** GW DEP 4400, planned fuel 650, landed fuel 380, patient 85, VAR TOW 4800:
-`GW = 4400 + (380 − 650) + 85 = 4215 kg`, `PERF = 4800 − 4215 = +585 kg`.
+**Worked example:** GW DEP 4600, planned 650. Flight 1 lands with 500 kg, no refuel. Flight 2 (HEMS, patient 90 kg): departure fuel = 500, so `DEP GW = 4600 + (500 − 650) + 90 = 4540 kg`; against VAR TOW 4650, `PERF = +110 kg`. Flight 2 refuels; flight 3 departure fuel = 650, `DEP GW = 4600 kg`.
 
-Warnings: GW above the fixed limit of **4600 kg** shows an amber `OVER 4600 KG` flag on the row and the PDF. PERF shows green when positive, amber when negative. The 4600 figure is hard-coded (AW169 MTOW variant) — if a different limit ever applies, the app must be changed.
+Weight flags — two distinct thresholds, deliberately worded differently:
+
+- **`>4600 NOTE ON SRP`** (amber): 4600 kg is **not a limit**. Flights with gross weight above 4600 kg carry maintenance penalties and must be recorded on the SRP. The PDF prints a one-line summary (`NOTE ON SRP — GW OVER 4600 KG: FLT 1, FLT 2`) so the SRP filler doesn't have to scan every row.
+- **`OVER AUM 4800 KG`** (amber, bold): 4800 kg is the aircraft's all-up mass. This one *is* an exceedance warning.
+
+PERF shows green when positive, amber when negative. Both thresholds are hard-coded — if a different variant or limit ever applies, the app must be changed.
+
+> The flag is judged on **departure** weight per the inference table in §1.5, so burn-off during the flight cannot hide a >4600 departure. The residual weakness is the refuel assumption: a refuel that doesn't return fuel to exactly the planned load skews the next flight's figure.
 
 ### 1.6 Power check (once per card)
 
@@ -73,7 +87,7 @@ Required once per SRP / 10 flight hours / 24 hours, so the app records **one per
 ### 1.7 MISC, previous cards, new card
 
 - **MISC** — free-text card-level notes, printed on the PDF.
-- **PREVIOUS CARDS** — the last **4** cards (one work run) are kept on-device. Tap one to view and edit it; an amber banner shows you're on a previous card, edits save automatically to that card, and **EXPORT PDF (THIS CARD)** re-generates a corrected PDF without touching today's card. A fifth new card silently drops the oldest.
+- **PREVIOUS CARDS** — the last **4** cards (one work run) are kept on-device. Tap one to view and edit it; an amber banner shows you're on a previous card (one card = one SRP page, so several cards per day is normal), edits save automatically to that card, and **EXPORT PDF (THIS CARD)** re-generates a corrected PDF without touching today's card. A fifth new card silently drops the oldest.
 - **NEW CARD** — always asks first: **EXPORT PDF & NEW CARD** (card clears only after the share sheet succeeds), **CLEAR WITHOUT PDF**, or **CANCEL**. The outgoing card is archived to PREVIOUS CARDS either way.
 
 ### 1.8 PDF export
@@ -123,7 +137,7 @@ The inline refuel on a flight row is the same formula with `REQUIRED = PLANNED F
 ## 6. Known assumptions to check before trusting output
 
 1. GW DEP **includes planned fuel** (§1.5) — verify against the mass & balance definition.
-2. GW limit hard-coded at **4600 kg**.
+2. 4600 kg (SRP notation threshold) and 4800 kg (AUM) are hard-coded. Departure fuel is inferred (§1.5): refuels are assumed to return fuel exactly to the planned load.
 3. VAR TOW is a single daily entry — refresh it if conditions change.
 4. Sun times are computed (±1–2 min), not almanac-official.
 5. Default density 0.79 is nominal — use the bowser figure.
