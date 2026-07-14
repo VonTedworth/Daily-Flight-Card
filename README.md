@@ -46,7 +46,7 @@ Required once per SRP / 10 flight hours / 24 hours → recorded **once per card*
 
 ### 1.5 PDF export
 
-Generated on-device. Filename/share subject: `REG SRP nnnn DD.MM.YYYY` (iOS Mail adopts the filename as subject by convention — Apple behaviour, not guaranteed). Recipient cannot be pre-filled by iOS; the footer prints `SUBMIT TO:` from the per-device **SEND PDF TO** field. The PDF contains the full card regardless of the tab split: header, every used flight with DEP GW / DEP PERF / flags / notes / grid, the SRP >4600 summary line (§2.3), power check, MISC.
+Generated on-device. Filename/share subject: `REG SRP nnnn DD.MM.YYYY` (iOS Mail adopts the filename as subject by convention — Apple behaviour, not guaranteed). Recipient cannot be pre-filled by iOS — pick the address in Mail after the share sheet. The PDF contains the full card regardless of the tab split: header, every used flight with DEP GW / DEP PERF / flags / notes / grid, the SRP >4600 summary line (§2.3), power check, MISC.
 
 ---
 
@@ -135,7 +135,7 @@ The completed card is archived under PREVIOUS CARDS with its original SRP.
 
 ## 6. Storage, privacy, display
 
-- Everything lives in `localStorage` on that phone: current card, previous 4 cards, last reg, PDF email, theme. Each device independent; nothing transmitted. GPS used only when a HEMS box is ticked.
+- Everything lives in `localStorage` on that phone: current card, previous 4 cards, last reg, theme. Each device independent; nothing transmitted. GPS used only when a HEMS box is ticked.
 - localStorage is not indestructible — clearing Safari website data wipes cards. The emailed PDF is the durable record.
 - ☀/☾ (top right): night (dark MFD) / day (high-contrast sunlight) theme, per device.
 - Safe-area padding keeps content clear of the iPhone status bar and home indicator; layout auto-scales on iPads.
