@@ -49,3 +49,10 @@ need delete/re-add for meta-tag changes (iOS caches aggressively).
 - Power check once per card, six fields, REDO to overwrite.
 - Carry-over: SRP +1, AVAILABLE = previous REMAINING.
 - Every feature must be faster than pen and paper; when in doubt, remove.
+
+## Decisions log
+- July 2026 — WX/METAR tab investigated and rejected: aviationweather.gov
+  blocks browser CORS; the workaround (GitHub Actions data pipeline) adds
+  15–25 min latency, losing to AeroWeather on the "must beat the existing
+  way" test. Do not revisit without a use case that needs weather data
+  inside a calculation rather than for display.
