@@ -1,0 +1,20 @@
+{
+  "name": "gama-kss-flight-card",
+  "version": "1.0.0",
+  "description": "GAMA KSS daily flight card + fuel uplift web app (single-file, offline, GitHub Pages)",
+  "main": "index.js",
+  "scripts": {
+    "build": "esbuild src/app.jsx --loader:.jsx=jsx --jsx=automatic --bundle --minify --outfile=build/app.js && python3 build_html.py",
+    "test": "for t in domtest3 domtest4 domtest6 domtest7 domtest8 domtest10 domtest11; do echo \"== $t\"; node $t.js || exit 1; done"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "esbuild": "^0.28.1",
+    "jsdom": "^29.1.1",
+    "jspdf": "^4.2.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  }
+}
