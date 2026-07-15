@@ -15,12 +15,12 @@ setTimeout(()=>{
   const d = dom.window.document;
   const t = d.getElementById("root").textContent;
   const spans = [...d.querySelectorAll("span")];
-  const srpSpan = spans.find(s=>s.textContent.trim().startsWith("DEP GW 4650 KG"));
-  const aumSpan = spans.find(s=>s.textContent.includes("DEP GW 4870 KG — OVER AUM 4800 KG"));
+  const srpSpan = spans.find(s=>s.textContent.trim().startsWith("DEP GW 4650KG"));
+  const aumSpan = spans.find(s=>s.textContent.includes("DEP GW 4870KG — OVER AUM"));
   const checks = [
     ["FLT1 4650 plain", !!srpSpan],
-    ["FLT2 4870 AUM warning", !!aumSpan],
-    ["FLT3 4640 plain", t.includes("DEP GW 4640 KG")],
+    ["FLT2 4870 AUM warning (shortened, no repeated 4800)", !!aumSpan && !aumSpan.textContent.includes("4800")],
+    ["FLT3 4640 plain", t.includes("DEP GW 4640KG")],
     ["4650 grey vs AUM amber", srpSpan && aumSpan && srpSpan.style.color !== aumSpan.style.color],
     ["no SRP note text on rows", !t.includes("NOTE ON SRP")],
     ["no old OVER 4600 wording", !t.includes("OVER 4600")],

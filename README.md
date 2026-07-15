@@ -23,13 +23,13 @@ Fields are grouped on the page as DATE/AC REG, SRP/HOURS AVAILABLE, then a **PER
 | **SRP** | SRP number | Digits only. Appears in the PDF filename/subject and increments on carry-over (§4). |
 | **HOURS AVAILABLE** | Maintenance hours available at start of this card | Number pad, digits only; colon auto-inserts before the last two digits: `934 → 9:34`, `2530 → 25:30`. One or two digits are whole hours. |
 | **GW DEP KG** | Gross weight at first departure, kg | Manual entry. **Assumption: this figure includes the planned fuel load** — the departure GW calculation (§2.2) depends on it. Take it from the certified mass & balance app; deliberately *not* remembered between cards because it varies with crew. |
-| **VAR TOW KG** | Variable (performance-limited) take-off weight, kg | Manual entry from the performance calculation. Entered once per card — if OAT/QNH change materially during the day, update it, or the PERF/DEP PERF figures go stale. |
+| **VAR TOW KG** | Variable (performance-limited) take-off weight, kg | Manual entry from the performance calculation. Entered once per card — if OAT/QNH change materially during the day, update it, or the PERF/VAR margin figures go stale. |
 | **VERT TOW KG** | Vertical take-off weight limit, kg | Manual entry, same rules as VAR TOW: entered once per card from the performance calculation, integer, *not* remembered between cards. |
 | **PERF KG** | Card-level performance margin, dual display | **Computed, not entered:** `VAR = VAR TOW − GW DEP` and `VERT = VERT TOW − GW DEP`, shown side by side split by a hairline. Each margin is coloured independently — green ≥ 0, amber negative — and shows an em-dash if its TOW figure (or GW DEP) is missing. **Worked example:** GW DEP 4600, VAR TOW 4650, VERT TOW 4550 → `VAR +50` (green), `VERT −50` (amber). |
 | **PLANNED FUEL KG** | Standard fuel load for the day, kg | Seeds REQUIRED FUEL on the UPLIFT tab; feeds the inline refuel and departure GW calculations. |
 | **SUNRISE / SUNSET** | Civil times for Redhill | **Computed offline** (NOAA solar algorithm, Redhill 51.2136 N 0.1386 W, GMT/BST from UK clock-change rules). Accuracy ±1–2 min vs the almanac — cross-check when it matters operationally. |
 
-VAR TOW and VERT TOW are independent limits from the same performance calculation (e.g. power-limited vs the aircraft's vertical/OEI figure) — both are checked against the same GW DEP, and both margins are informational only; neither figure feeds the FLIGHTS-page DEP PERF, which remains VAR-TOW-only (§2.2).
+VAR TOW and VERT TOW are independent limits from the same performance calculation (e.g. power-limited vs the aircraft's vertical/OEI figure) — both are checked against the same GW DEP, and both margins are informational only. The FLIGHTS-page per-flight line also shows both margins, computed against that flight's own DEP GW (§2.2).
 
 ### 1.2 Summary strip
 
@@ -51,7 +51,7 @@ Required once per SRP / 10 flight hours / 24 hours → recorded **once per card*
 
 ### 1.5 PDF export
 
-Generated on-device. Filename/share subject: `REG SRP nnnn DD.MM.YYYY` (iOS Mail adopts the filename as subject by convention — Apple behaviour, not guaranteed). Recipient cannot be pre-filled by iOS — pick the address in Mail after the share sheet. The PDF contains the full card regardless of the tab split: header, every used flight with DEP GW / DEP PERF / flags / notes / grid, the SRP >4600 summary line (§2.3), power check, MISC.
+Generated on-device. Filename/share subject: `REG SRP nnnn DD.MM.YYYY` (iOS Mail adopts the filename as subject by convention — Apple behaviour, not guaranteed). Recipient cannot be pre-filled by iOS — pick the address in Mail after the share sheet. The PDF contains the full card regardless of the tab split: header, every used flight with DEP GW / VAR / VERT margins / flags / notes / grid, the SRP >4600 summary line (§2.3), power check, MISC.
 
 ---
 
@@ -71,9 +71,9 @@ A context bar at the top shows `REG · SRP · REM h:mm` so the A/C page isn't ne
 | **HEMS** | Checkbox | GPS position → six-figure OS grid (§2.4), green `HEMS · TQ 301 476`, amber `GRID UNAVAILABLE` on failure. Reveals **PATIENT KG**. |
 | **PATIENT KG** | Patient weight, kg (HEMS rows) | Added into that flight's departure gross weight. |
 
-### 2.2 Departure gross weight and DEP PERF
+### 2.2 Departure gross weight and VAR/VERT margins
 
-Shown under each row once computable, and on the PDF. These are **departure** figures — post-flight data collation, not planning. Departure fuel for flight *N* is inferred:
+Shown under each row once computable, and on the PDF, as a single non-wrapping line: `DEP GW 4540KG · VAR +110 · VERT +10`. These are **departure** figures — post-flight data collation, not planning. Departure fuel for flight *N* is inferred:
 
 | Situation | Departure fuel assumed |
 |---|---|
@@ -82,21 +82,23 @@ Shown under each row once computable, and on the PDF. These are **departure** fi
 | Otherwise | Previous flight's FUEL KG (its landed fuel) |
 
 ```
-DEP GW(flight)   = GW DEP + (departure fuel − PLANNED FUEL) + PATIENT KG
-DEP PERF(flight) = VAR TOW − DEP GW(flight)
+DEP GW(flight)  = GW DEP + (departure fuel − PLANNED FUEL) + PATIENT KG
+VAR(flight)     = VAR TOW  − DEP GW(flight)
+VERT(flight)    = VERT TOW − DEP GW(flight)
 ```
 
 - PATIENT KG counts only on HEMS rows.
 - **Assumes GW DEP includes planned fuel** and every refuel returns fuel exactly to the planned load; a partial/over-plan refuel skews the following flight's figure — check manually.
 - Flight 1's DEP GW appears as soon as the header is filled (`GW DEP + patient`), so preloading a patient weight on the next row shows the lift margin **before** flight time or landing fuel exist — the intended pre-departure glance when power-limited.
+- Each margin is independently coloured (green ≥ 0 / amber negative) and shown with no `KG` suffix; VERT prints an em-dash if VERT TOW is empty. The `DEP GW` figure itself has no space before `KG` (`4540KG`), grey unless over AUM.
 
-**Worked example:** GW DEP 4600, planned 650. Flight 1 lands with 500 kg, no refuel. Flight 2 (HEMS, patient 90): departure fuel 500 → `DEP GW = 4600 + (500 − 650) + 90 = 4540`; VAR TOW 4650 → `DEP PERF = +110 kg`. Flight 2 refuels → flight 3 departure fuel 650, `DEP GW = 4600`.
+**Worked example:** GW DEP 4600, planned 650. Flight 1 lands with 500 kg, no refuel. Flight 2 (HEMS, patient 90): departure fuel 500 → `DEP GW = 4600 + (500 − 650) + 90 = 4540`; VAR TOW 4650 → `VAR = +110`; VERT TOW 4440 → `VERT = −100`. Flight 2 refuels → flight 3 departure fuel 650, `DEP GW = 4600`.
 
 ### 2.3 Weight thresholds
 
 - **4600 kg is NOT a limit** — it is the maintenance-penalty notation threshold. Rows show the plain grey `DEP GW` figure with no annotation (crews know the threshold); the **PDF prints one summary line** — `NOTE ON SRP — GW OVER 4600 KG: FLT 1, FLT 3` — for direct transcription to the SRP.
-- **`OVER AUM 4800 KG`** (amber, bold) — the aircraft's all-up mass; this *is* an exceedance warning.
-- DEP PERF: green positive, amber negative. Both thresholds hard-coded.
+- **`— OVER AUM`** (amber, bold) — the aircraft's all-up mass (4800 kg, not repeated in the wording since the limit is fixed and known); this *is* an exceedance warning. The VAR/VERT margins still print on the same line.
+- VAR / VERT margins: green positive, amber negative. Both TOW figures and the AUM threshold are hard-coded/manual per card.
 
 ### 2.4 HEMS grid reference
 
@@ -149,7 +151,7 @@ The completed card is archived under PREVIOUS CARDS with its original SRP.
 
 1. GW DEP **includes planned fuel** (§2.2) — verify against the mass & balance definition.
 2. 4600 kg (SRP notation) and 4800 kg (AUM) hard-coded. Departure fuel is inferred (§2.2): refuels assumed to return exactly to planned load.
-3. VAR TOW is a manual entry — refresh it if conditions change; DEP PERF is only as current as that number.
+3. VAR TOW and VERT TOW are manual entries — refresh them if conditions change; the PERF box and every flight-row margin are only as current as those two numbers.
 4. Sun times computed (±1–2 min), not almanac-official.
 5. Default density 0.79 is nominal — use the bowser figure.
 6. Zulu line and sun times assume UK rules and the Redhill location.

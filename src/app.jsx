@@ -653,16 +653,15 @@ function makeCardPdf(card, rowGW, bst) {
 
     if (w !== null) {
       const overAum = w > MTOW;
-      const srpNote = w > SRP_NOTE_WT;
-      const perfRow = vt !== null ? vt - w : null;
-      const bad = overAum || (perfRow !== null && perfRow < 0);
+      const perfVarRow = vt !== null ? vt - w : null;
+      const perfVertRow = vv !== null ? vv - w : null;
+      const bad = overAum || (perfVarRow !== null && perfVarRow < 0) || (perfVertRow !== null && perfVertRow < 0);
+      const fmtMargin = (val) => (val === null ? "-" : `${val > 0 ? "+" : ""}${val.toFixed(0)}`);
       doc.setFont("courier", bad ? "bold" : "normal");
       doc.setFontSize(8.5);
       doc.setTextColor(...(bad ? [200, 120, 0] : [110, 110, 110]));
       doc.text(
-        `    DEP GW ${w.toFixed(0)} KG${overAum ? ` — OVER AUM ${MTOW} KG` : ""}${
-          perfRow !== null ? `   DEP PERF ${perfRow > 0 ? "+" : ""}${perfRow.toFixed(0)} KG` : ""
-        }`,
+        `    DEP GW ${w.toFixed(0)}KG${overAum ? " — OVER AUM" : ""} · VAR ${fmtMargin(perfVarRow)} · VERT ${fmtMargin(perfVertRow)}`,
         M,
         y
       );
@@ -1390,19 +1389,31 @@ function FlightCard({
         (() => {
           const w = rowGrossWeight(row, i);
           const vt = parseNum(card.varField);
-          const perfRow = vt !== null ? vt - w : null; // VAR TOW − this flight's GW
-          return (
-            <div style={{ marginTop: 8, paddingLeft: 28, fontFamily: mono, fontSize: 12, fontWeight: 600 }}>
-              <span style={{ color: w > MTOW ? C.amber : C.grey, fontWeight: w > MTOW ? 700 : 600 }}>
-                DEP GW {w.toFixed(0)} KG
-                {w > MTOW ? ` — OVER AUM ${MTOW} KG` : ""}
+          const vv = parseNum(card.vertField);
+          const overAum = w > MTOW;
+          const varMargin = vt !== null ? vt - w : null; // VAR TOW − this flight's GW
+          const vertMargin = vv !== null ? vv - w : null; // VERT TOW − this flight's GW
+          const rowMargin = (lab, val) => (
+            <span key={lab}>
+              <span style={{ color: C.grey }}> · {lab} </span>
+              <span style={{ color: val === null ? C.grey : val < 0 ? C.amber : C.green }}>
+                {val === null ? "—" : `${val > 0 ? "+" : ""}${val.toFixed(0)}`}
               </span>
-              {perfRow !== null && (
-                <span style={{ color: perfRow < 0 ? C.amber : C.green, marginLeft: 14 }}>
-                  DEP PERF {perfRow > 0 ? "+" : ""}
-                  {perfRow.toFixed(0)} KG
+            </span>
+          );
+          return (
+            // Fits one line at normal sizes for every realistic combination; the extreme
+            // case (over AUM + both margins deep negative) can exceed a 375px viewport, so
+            // this scrolls horizontally rather than wrapping or silently clipping a figure.
+            <div style={{ marginTop: 8, paddingLeft: 28, overflowX: "auto", WebkitOverflowScrolling: "touch", maxWidth: "100%" }}>
+              <div style={{ fontFamily: mono, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", width: "max-content" }}>
+                <span style={{ color: overAum ? C.amber : C.grey, fontWeight: overAum ? 700 : 600 }}>
+                  DEP GW {w.toFixed(0)}KG
+                  {overAum ? " — OVER AUM" : ""}
                 </span>
-              )}
+                {rowMargin("VAR", varMargin)}
+                {rowMargin("VERT", vertMargin)}
+              </div>
             </div>
           );
         })()}

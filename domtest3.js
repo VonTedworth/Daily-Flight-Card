@@ -20,8 +20,9 @@ setTimeout(() => {
   let t = d.getElementById("root").textContent;
   const flightsChecks = [
     ["flights page renders rows", t.includes("FLT MIN")],
-    ["dep GW 4485 (planned fuel basis)", t.includes("DEP GW 4485 KG")],
-    ["DEP PERF +315", t.includes("DEP PERF +315 KG")],
+    ["dep GW 4485 (planned fuel basis)", t.includes("DEP GW 4485KG")],
+    ["VAR margin +315, no old DEP PERF wording", t.includes("VAR +315") && !t.includes("DEP PERF")],
+    ["VERT margin em-dash (vertField unset)", t.includes("VERT —")],
     ["NOW button", t.includes("NOW")],
     ["context bar SRP", t.includes("SRP 1234")],
   ];

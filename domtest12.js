@@ -84,6 +84,55 @@ const marginValue = (d, label) => {
     check("VAR TOW still carried too (4650)", inputs.some((i) => i.value === "4650"));
   }
 
+  // span whose trimmed text exactly matches `· LABEL` (the flight-row margin format), then its value sibling
+  const rowMarginValue = (d, label) => {
+    const span = [...d.querySelectorAll("span")].find((s) => s.textContent.trim() === `· ${label}`);
+    return span ? span.nextElementSibling : null;
+  };
+
+  // ── D: flight row, mixed sign — GW DEP 4630 (VAR +20, VERT -80) ──
+  {
+    const cur = { date: "14.07.2026", acReg: "G-KSST", srp: "1234", gwDep: "4630", varField: "4650", vertField: "4550",
+      plannedFuel: "650", hoursAvail: "9:00", sunriseSet: "", rows: emptyRows(), misc: "", powerChecks: [] };
+    const dom = makeDom(cur);
+    await sleep(2500);
+    const d = dom.window.document;
+    const t = d.getElementById("root").textContent;
+    const varVal = rowMarginValue(d, "VAR");
+    const vertVal = rowMarginValue(d, "VERT");
+    check("flight row: DEP GW 4630KG (no space before KG)", t.includes("DEP GW 4630KG"));
+    check("flight row: VAR margin +20", !!varVal && varVal.textContent.trim() === "+20");
+    check("flight row: VERT margin -80", !!vertVal && vertVal.textContent.trim() === "-80");
+    check("flight row: VAR green, VERT amber (different colours)", !!varVal && !!vertVal && varVal.style.color !== vertVal.style.color);
+    check("no old DEP PERF wording on flight row", !t.includes("DEP PERF"));
+  }
+
+  // ── E: flight row, over AUM — GW DEP 4870 (shortened warning, both margins negative) ──
+  {
+    const cur = { date: "14.07.2026", acReg: "G-KSST", srp: "1234", gwDep: "4870", varField: "4650", vertField: "4550",
+      plannedFuel: "650", hoursAvail: "9:00", sunriseSet: "", rows: emptyRows(), misc: "", powerChecks: [] };
+    const dom = makeDom(cur);
+    await sleep(2500);
+    const d = dom.window.document;
+    const t = d.getElementById("root").textContent;
+    check("over-AUM: shortened warning, no repeated 4800 figure", t.includes("DEP GW 4870KG — OVER AUM") && !t.includes("OVER AUM 4800"));
+    check("over-AUM: VAR margin -220 still printed", t.includes("VAR") && rowMarginValue(d, "VAR")?.textContent.trim() === "-220");
+    check("over-AUM: VERT margin -320 still printed", rowMarginValue(d, "VERT")?.textContent.trim() === "-320");
+  }
+
+  // ── F: flight row, VERT TOW empty — em-dash, no error ──
+  {
+    const cur = { date: "14.07.2026", acReg: "G-KSST", srp: "1234", gwDep: "4600", varField: "4650", vertField: "",
+      plannedFuel: "650", hoursAvail: "9:00", sunriseSet: "", rows: emptyRows(), misc: "", powerChecks: [] };
+    const dom = makeDom(cur);
+    await sleep(2500);
+    const d = dom.window.document;
+    const t = d.getElementById("root").textContent;
+    check("flight row: no crash with VERT TOW empty", t.includes("FLT MIN"));
+    const vertVal = rowMarginValue(d, "VERT");
+    check("flight row: VERT margin is an em-dash when VERT TOW empty", !!vertVal && vertVal.textContent.trim() === "—");
+  }
+
   let fail = 0;
   for (const [n, ok] of res) { console.log((ok ? "PASS" : "FAIL") + "  " + n); if (!ok) fail++; }
   process.exit(fail ? 1 : 0);

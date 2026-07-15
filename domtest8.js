@@ -24,11 +24,12 @@ const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
   await sleep(2500);
   const t = d.getElementById("root").textContent;
   const res=[]; const check=(n,ok)=>res.push([n,ok]);
-  check("FLT1 dep GW = gwDep (planned fuel)", t.includes("DEP GW 4600 KG"));
-  check("FLT2 prev-landed + patient (4540)", t.includes("DEP GW 4540 KG"));
-  check("FLT4 prev landed 620 (4570)", t.includes("DEP GW 4570 KG"));
-  check("FLT1 4600 not flagged (not >4600)", !t.includes("DEP GW 4600 KG —"));
-  check("DEP PERF label (4650-4540=+110)", t.includes("DEP PERF +110 KG"));
+  check("FLT1 dep GW = gwDep (planned fuel)", t.includes("DEP GW 4600KG"));
+  check("FLT2 prev-landed + patient (4540)", t.includes("DEP GW 4540KG"));
+  check("FLT4 prev landed 620 (4570)", t.includes("DEP GW 4570KG"));
+  check("FLT1 4600 not flagged (not >4600)", !t.includes("DEP GW 4600KG —"));
+  check("VAR margin (4650-4540=+110), no old DEP PERF wording", t.includes("VAR +110") && !t.includes("DEP PERF"));
+  check("VERT margin em-dash (vertField unset)", t.includes("VERT —"));
   // wording — history list is on the A/C DATA page
   [...d.querySelectorAll("button")].find(b=>b.textContent.trim()==="A/C DATA")
     .dispatchEvent(new w.MouseEvent("click",{bubbles:true})); await sleep(300);
