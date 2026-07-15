@@ -14,17 +14,22 @@ The app has three tabs: **A/C DATA** (once-per-SRP setup and admin), **FLIGHTS**
 
 ### 1.1 Header fields
 
+Fields are grouped on the page as DATE/AC REG, SRP/HOURS AVAILABLE, then a **PERFORMANCE** divider, GW DEP/VAR TOW, VERT TOW/PERF KG, then a plain divider, PLANNED FUEL/SUNRISE-SUNSET. The table below follows that on-screen order.
+
 | Field | What it is | Function / calculation |
 |---|---|---|
 | **DATE** | Card date, `dd.mm.yyyy` | Drives the sunrise/sunset calculation. Defaults to today; editing it recalculates sun times. |
 | **AC REG** | Aircraft registration | Dropdown: G-LNAC, G-MGPS, G-KSSC, G-KSST, G-ICER, or OTHER (free text). Last-used registration floats to the top and is remembered per device. |
 | **SRP** | SRP number | Digits only. Appears in the PDF filename/subject and increments on carry-over (§4). |
-| **GW DEP KG** | Gross weight at first departure, kg | Manual entry. **Assumption: this figure includes the planned fuel load** — the departure GW calculation (§2.2) depends on it. Take it from the certified mass & balance app; deliberately *not* remembered between cards because it varies with crew. |
-| **VAR TOW KG** | Variable (performance-limited) take-off weight, kg | Manual entry from the performance calculation. Entered once per card — if OAT/QNH change materially during the day, update it, or the DEP PERF figures go stale. |
-| **PERF KG** | Card-level performance margin | **Computed, not entered:** `PERF = VAR TOW − GW DEP`. Green positive, amber negative. Example: 4650 − 4600 = **+50 kg**. |
-| **PLANNED FUEL KG** | Standard fuel load for the day, kg | Seeds REQUIRED FUEL on the UPLIFT tab; feeds the inline refuel and departure GW calculations. |
 | **HOURS AVAILABLE** | Maintenance hours available at start of this card | Number pad, digits only; colon auto-inserts before the last two digits: `934 → 9:34`, `2530 → 25:30`. One or two digits are whole hours. |
+| **GW DEP KG** | Gross weight at first departure, kg | Manual entry. **Assumption: this figure includes the planned fuel load** — the departure GW calculation (§2.2) depends on it. Take it from the certified mass & balance app; deliberately *not* remembered between cards because it varies with crew. |
+| **VAR TOW KG** | Variable (performance-limited) take-off weight, kg | Manual entry from the performance calculation. Entered once per card — if OAT/QNH change materially during the day, update it, or the PERF/DEP PERF figures go stale. |
+| **VERT TOW KG** | Vertical take-off weight limit, kg | Manual entry, same rules as VAR TOW: entered once per card from the performance calculation, integer, *not* remembered between cards. |
+| **PERF KG** | Card-level performance margin, dual display | **Computed, not entered:** `VAR = VAR TOW − GW DEP` and `VERT = VERT TOW − GW DEP`, shown side by side split by a hairline. Each margin is coloured independently — green ≥ 0, amber negative — and shows an em-dash if its TOW figure (or GW DEP) is missing. **Worked example:** GW DEP 4600, VAR TOW 4650, VERT TOW 4550 → `VAR +50` (green), `VERT −50` (amber). |
+| **PLANNED FUEL KG** | Standard fuel load for the day, kg | Seeds REQUIRED FUEL on the UPLIFT tab; feeds the inline refuel and departure GW calculations. |
 | **SUNRISE / SUNSET** | Civil times for Redhill | **Computed offline** (NOAA solar algorithm, Redhill 51.2136 N 0.1386 W, GMT/BST from UK clock-change rules). Accuracy ±1–2 min vs the almanac — cross-check when it matters operationally. |
+
+VAR TOW and VERT TOW are independent limits from the same performance calculation (e.g. power-limited vs the aircraft's vertical/OEI figure) — both are checked against the same GW DEP, and both margins are informational only; neither figure feeds the FLIGHTS-page DEP PERF, which remains VAR-TOW-only (§2.2).
 
 ### 1.2 Summary strip
 
@@ -120,7 +125,7 @@ UPLIFT L  = UPLIFT KG ÷ DENSITY
 
 An SRP page holds seven sectors. When a day overruns, tick **CARRY OVER A/C DATA — SRP +1, AVAILABLE = REMAINING** in the NEW CARD dialog, then use either exit button. The new card:
 
-- copies DATE, AC REG, GW DEP, VAR TOW, PLANNED FUEL, SUNRISE/SUNSET;
+- copies DATE, AC REG, GW DEP, VAR TOW, VERT TOW, PLANNED FUEL, SUNRISE/SUNSET;
 - **increments SRP by one** (the SRP field is digits-only, so this always applies);
 - sets **AVAILABLE = the old card's REMAINING**, so the maintenance countdown continues across SRP pages;
 - starts with blank flights, MISC, and power check (the once-per-SRP/10 hr/24 hr power check requirement is judged by the crew, not re-prompted).

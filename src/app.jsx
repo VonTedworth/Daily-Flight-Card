@@ -245,7 +245,7 @@ const SAN = {
   },
 };
 const KIND_MODE = { int: "numeric", dec: "decimal", time: "numeric", date: "decimal", signed: "text", hm: "numeric" };
-const HEADER_KIND = { date: "date", srp: "int", gwDep: "int", varField: "int", plannedFuel: "int", hoursAvail: "hm" };
+const HEADER_KIND = { date: "date", srp: "int", gwDep: "int", varField: "int", vertField: "int", plannedFuel: "int", hoursAvail: "hm" };
 
 // ── Shared styles (functions so they read C at render time) ──
 const label = () => ({
@@ -579,14 +579,16 @@ function makeCardPdf(card, rowGW, bst) {
   doc.line(M, y, W - M, y);
   y += 7;
 
-  const gw = parseNum(card.gwDep), vt = parseNum(card.varField);
-  const perf = gw !== null && vt !== null ? vt - gw : null;
+  const gw = parseNum(card.gwDep), vt = parseNum(card.varField), vv = parseNum(card.vertField);
+  const perfVar = gw !== null && vt !== null ? vt - gw : null;
+  const perfVert = gw !== null && vv !== null ? vv - gw : null;
   const hdr = [
     ["AC REG", card.acReg.trim()],
     ["SRP", card.srp],
     ["GW DEP KG", card.gwDep],
     ["VAR TOW KG", card.varField],
-    ["PERF KG", perf === null ? "" : `${perf > 0 ? "+" : ""}${perf.toFixed(0)}`],
+    ["VERT TOW KG", card.vertField],
+    ["PERF KG", null], // dual VAR/VERT margins, rendered specially below
     ["PLANNED FUEL KG", card.plannedFuel],
     ["HOURS AVAILABLE", card.hoursAvail],
     ["SUNRISE / SUNSET", card.sunriseSet],
@@ -599,6 +601,20 @@ function makeCardPdf(card, rowGW, bst) {
     doc.setFont("courier", "normal");
     doc.setTextColor(110, 110, 110);
     doc.text(k + ":", x, yy);
+    if (k === "PERF KG") {
+      const vx = x + 38;
+      doc.setFont("courier", "bold");
+      const seg = (label, val) => {
+        doc.setTextColor(...(val !== null && val < 0 ? [200, 120, 0] : [20, 20, 20]));
+        const str = `${label} ${val === null ? "-" : `${val > 0 ? "+" : ""}${val.toFixed(0)}`}`;
+        doc.text(str, vx + seg.w, yy);
+        seg.w += doc.getTextWidth(str + "  ");
+      };
+      seg.w = 0;
+      seg("VAR", perfVar);
+      seg("VERT", perfVert);
+      return;
+    }
     doc.setFont("courier", "bold");
     doc.setTextColor(20, 20, 20);
     doc.text(String(v || "-"), x + 38, yy);
@@ -737,11 +753,12 @@ const HEADER_FIELDS = [
   ["date", "DATE"],
   ["acReg", "AC REG"],
   ["srp", "SRP"],
+  ["hoursAvail", "HOURS AVAILABLE"],
   ["gwDep", "GW DEP KG"],
   ["varField", "VAR TOW KG"],
+  ["vertField", "VERT TOW KG"],
   ["perfKg", "PERF KG"],
   ["plannedFuel", "PLANNED FUEL KG"],
-  ["hoursAvail", "HOURS AVAILABLE"],
   ["sunriseSet", "SUNRISE / SUNSET"],
 ];
 
@@ -768,6 +785,7 @@ function freshCard() {
     srp: "",
     gwDep: "",
     varField: "",
+    vertField: "",
     plannedFuel: "",
     hoursAvail: "",
     sunriseSet: d ? sunTimes(d, REDHILL.lat, REDHILL.lng) : "",
@@ -788,7 +806,7 @@ const AUTO_NOTES = ["", GROUND_RUN, GR_POWER_CHECK, PWR_ONLY];
 
 const rowUsed = (r) => Boolean(r.fltTime || r.shtdwn || r.fuel || r.notes || r.refuel || r.hems);
 const cardUsed = (c) =>
-  Boolean(c && (c.rows.some(rowUsed) || c.srp || c.gwDep || c.varField || c.plannedFuel || c.misc || c.powerChecks.length));
+  Boolean(c && (c.rows.some(rowUsed) || c.srp || c.gwDep || c.varField || c.vertField || c.plannedFuel || c.misc || c.powerChecks.length));
 
 function FlightCard({
   page, // "ac" = aircraft data page, "flights" = flight rows page
@@ -1040,6 +1058,7 @@ function FlightCard({
       next.acReg = card.acReg;
       next.gwDep = card.gwDep;
       next.varField = card.varField;
+      next.vertField = card.vertField;
       next.plannedFuel = card.plannedFuel;
       next.sunriseSet = card.sunriseSet;
       // SRP increments if numeric, else copies verbatim
@@ -1182,22 +1201,45 @@ function FlightCard({
 
   const gw = parseNum(card.gwDep);
   const vt = parseNum(card.varField);
-  const perf = gw !== null && vt !== null ? vt - gw : null;
+  const vv = parseNum(card.vertField);
+  const perfVar = gw !== null && vt !== null ? vt - gw : null;
+  const perfVert = gw !== null && vv !== null ? vv - gw : null;
+  const perfHalf = (lab, val) => (
+    <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center", alignItems: "baseline", gap: 6 }}>
+      <span style={{ color: C.grey, fontSize: 10, letterSpacing: "0.1em", fontFamily: mono }}>{lab}</span>
+      <span
+        style={{
+          color: val === null ? C.grey : val < 0 ? C.amber : C.green,
+          fontSize: 16,
+          fontWeight: 600,
+          fontFamily: mono,
+        }}
+      >
+        {val === null ? "—" : `${val > 0 ? "+" : ""}${val.toFixed(0)}`}
+      </span>
+    </div>
+  );
   const perfField = (
     <div key="perfKg" style={{ flex: 1, minWidth: 0 }}>
       <span style={{ ...label(), fontSize: 10, marginBottom: 4 }}>PERF KG</span>
-      <div style={{ ...inputWell(), padding: "8px 10px", justifyContent: "flex-start" }}>
-        <span
-          style={{
-            color: perf === null ? C.grey : perf < 0 ? C.amber : C.green,
-            fontSize: 16,
-            fontWeight: 600,
-            fontFamily: mono,
-          }}
-        >
-          {perf === null ? "—" : `${perf > 0 ? "+" : ""}${perf.toFixed(0)} KG`}
-        </span>
+      <div style={{ ...inputWell(), padding: "8px 10px" }}>
+        {perfHalf("VAR", perfVar)}
+        <div style={{ width: 1, alignSelf: "stretch", background: C.edge }} />
+        {perfHalf("VERT", perfVert)}
       </div>
+    </div>
+  );
+
+  // Subtle row-group divider: optional tiny letter-spaced label, then a
+  // hairline in the panel edge colour, legible but unobtrusive in both themes.
+  const sectionDivider = (text) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      {text && (
+        <span style={{ color: C.grey, opacity: 0.55, fontSize: 9, letterSpacing: "0.16em", fontFamily: mono, whiteSpace: "nowrap" }}>
+          {text}
+        </span>
+      )}
+      <div style={{ flex: 1, height: 1, background: C.edge }} />
     </div>
   );
 
@@ -1417,15 +1459,27 @@ function FlightCard({
 
       {page === "ac" && (
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 18 }}>
-        {[0, 2, 4, 6].map((i) => (
-          <div key={i} style={{ display: "flex", gap: 12 }}>
-            {smallField(...HEADER_FIELDS[i])}
-            {smallField(...HEADER_FIELDS[i + 1])}
-          </div>
-        ))}
+        <div style={{ display: "flex", gap: 12 }}>
+          {smallField(...HEADER_FIELDS[0])}
+          {smallField(...HEADER_FIELDS[1])}
+        </div>
+        <div style={{ display: "flex", gap: 12 }}>
+          {smallField(...HEADER_FIELDS[2])}
+          {smallField(...HEADER_FIELDS[3])}
+        </div>
+        {sectionDivider("PERFORMANCE")}
+        <div style={{ display: "flex", gap: 12 }}>
+          {smallField(...HEADER_FIELDS[4])}
+          {smallField(...HEADER_FIELDS[5])}
+        </div>
+        <div style={{ display: "flex", gap: 12 }}>
+          {smallField(...HEADER_FIELDS[6])}
+          {smallField(...HEADER_FIELDS[7])}
+        </div>
+        {sectionDivider()}
         <div style={{ display: "flex", gap: 12 }}>
           {smallField(...HEADER_FIELDS[8])}
-          <div style={{ flex: 1, minWidth: 0 }} />
+          {smallField(...HEADER_FIELDS[9])}
         </div>
       </div>
       )}

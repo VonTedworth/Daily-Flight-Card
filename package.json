@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "esbuild src/app.jsx --loader:.jsx=jsx --jsx=automatic --bundle --minify --outfile=build/app.js && python3 build_html.py",
-    "test": "for t in domtest3 domtest4 domtest6 domtest7 domtest8 domtest10 domtest11; do echo \"== $t\"; node $t.js || exit 1; done"
+    "test": "for t in domtest3 domtest4 domtest6 domtest7 domtest8 domtest10 domtest11 domtest12; do echo \"== $t\"; node $t.js || exit 1; done"
   },
   "keywords": [],
   "author": "",
