@@ -127,10 +127,11 @@ UPLIFT L  = UPLIFT KG ÷ DENSITY
 
 An SRP page holds seven sectors. When a day overruns, tick **CARRY OVER A/C DATA — SRP +1, AVAILABLE = REMAINING** in the NEW CARD dialog, then use either exit button. The new card:
 
-- copies DATE, AC REG, GW DEP, VAR TOW, VERT TOW, PLANNED FUEL, SUNRISE/SUNSET;
+- copies AC REG, GW DEP, VAR TOW, VERT TOW, PLANNED FUEL;
 - **increments SRP by one** (the SRP field is digits-only, so this always applies);
 - sets **AVAILABLE = the old card's REMAINING**, so the maintenance countdown continues across SRP pages;
-- starts with blank flights, MISC, and power check (the once-per-SRP/10 hr/24 hr power check requirement is judged by the crew, not re-prompted).
+- starts with blank flights, MISC, and power check (the once-per-SRP/10 hr/24 hr power check requirement is judged by the crew, not re-prompted);
+- **does NOT copy DATE or SUNRISE/SUNSET** — the new card always shows today's date and today's recomputed sun times, even for a same-day overrun (where today already equals the outgoing date, so nothing changes) or a shift that crosses midnight (where copying would silently show yesterday's date and stale sun times).
 
 The completed card is archived under PREVIOUS CARDS with its original SRP.
 

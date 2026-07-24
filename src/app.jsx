@@ -678,7 +678,7 @@ function makeCardPdf(card, rowGW, bst) {
       doc.setFont("courier", "normal");
       doc.setFontSize(8.5);
       doc.setTextColor(60, 60, 60);
-      const wrapped = doc.splitTextToSize("    NOTES: " + r.notes, W - 2 * M);
+      const wrapped = doc.splitTextToSize("    NOTES: " + r.notes.toUpperCase(), W - 2 * M);
       doc.text(wrapped, M, y);
       y += wrapped.length * 3.9;
     }
@@ -731,7 +731,7 @@ function makeCardPdf(card, rowGW, bst) {
     y += 5;
     doc.setFont("courier", "normal");
     doc.setFontSize(8.5);
-    const wrapped = doc.splitTextToSize(card.misc, W - 2 * M);
+    const wrapped = doc.splitTextToSize(card.misc.toUpperCase(), W - 2 * M);
     doc.text(wrapped, M, y);
     y += wrapped.length * 3.9;
   }
@@ -802,6 +802,9 @@ const GROUND_RUN = "GROUND RUN";
 const GR_POWER_CHECK = "GROUND RUN – POWER CHECK";
 const PWR_ONLY = "POWER CHECK";
 const AUTO_NOTES = ["", GROUND_RUN, GR_POWER_CHECK, PWR_ONLY];
+// Case-insensitive: NOTES is no longer force-uppercased as the user types (iOS
+// predictive text fix), so a still-untouched auto-tag may be typed in any case.
+const isAutoNote = (v) => AUTO_NOTES.includes((v || "").toUpperCase());
 
 const rowUsed = (r) => Boolean(r.fltTime || r.shtdwn || r.fuel || r.notes || r.refuel || r.hems);
 const cardUsed = (c) =>
@@ -963,7 +966,7 @@ function FlightCard({
     const row = card.rows[i];
     const v = SAN.int(value);
     const isZero = v.trim() === "0";
-    if (AUTO_NOTES.includes(row.notes)) {
+    if (isAutoNote(row.notes)) {
       const pc = rowHasPC(i);
       updateRow(i, { fltTime: v, notes: isZero ? (pc ? GR_POWER_CHECK : GROUND_RUN) : pc ? PWR_ONLY : "" });
     } else {
@@ -978,7 +981,7 @@ function FlightCard({
     setPowerCheckAsk(null);
     if (yes) {
       const row = card.rows[i];
-      if (AUTO_NOTES.includes(row.notes)) updateRow(i, { notes: GR_POWER_CHECK });
+      if (isAutoNote(row.notes)) updateRow(i, { notes: GR_POWER_CHECK });
       onPowerCheckStart(i);
     }
   };
@@ -1053,13 +1056,17 @@ function FlightCard({
     const next = freshCard();
     if (carry) {
       // Same day ran past 7 sectors: new SRP page, same aircraft data.
-      next.date = card.date;
+      // DATE and SUNRISE/SUNSET are deliberately NOT copied — freshCard() already
+      // stamps today's date and recomputes today's sun times. If the carry-over is
+      // a same-day overrun, today equals the outgoing card's date, so nothing is
+      // lost; if it's a night shift past midnight (or later), copying the old date
+      // would silently produce the wrong date and stale sun times. Copying has no
+      // upside and one failure mode, so it's never done.
       next.acReg = card.acReg;
       next.gwDep = card.gwDep;
       next.varField = card.varField;
       next.vertField = card.vertField;
       next.plannedFuel = card.plannedFuel;
-      next.sunriseSet = card.sunriseSet;
       // SRP increments if numeric, else copies verbatim
       next.srp = /^\d+$/.test(card.srp) ? String(parseInt(card.srp, 10) + 1) : card.srp;
       // Maintenance countdown continues: new AVAILABLE = old REMAINING
@@ -1344,7 +1351,10 @@ function FlightCard({
           <span style={{ ...label(), fontSize: 9, marginBottom: 3, letterSpacing: "0.1em" }}>NOTES</span>
           <input
             value={row.notes}
-            onChange={(e) => updateRow(i, { notes: e.target.value.toUpperCase() })}
+            // Stored as typed (displayed uppercase via CSS below) — forcing the case on
+            // every keystroke discards iOS predictive-text insertions mid-composition.
+            onChange={(e) => updateRow(i, { notes: e.target.value })}
+            autoCapitalize="characters"
             style={{ ...inputStyle(15), display: "block", width: "100%" }}
           />
           {row.hems && row.hemsGrid && (
@@ -1622,7 +1632,9 @@ function FlightCard({
 
         <textarea
           value={card.misc}
-          onChange={(e) => update({ misc: e.target.value.toUpperCase() })}
+          // Stored as typed (displayed uppercase via CSS below) — see NOTES above.
+          onChange={(e) => update({ misc: e.target.value })}
+          autoCapitalize="characters"
           rows={3}
           style={{
             ...inputStyle(15),

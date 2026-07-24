@@ -45,7 +45,11 @@ const btnIncl=(txt)=>[...d.querySelectorAll("button")].find(b=>b.textContent.inc
   check("reg carried", [...d.querySelectorAll("select")].some(sel=>sel.value==="G-KSST"));
   check("gw dep carried", inputs.some(i=>i.value==="4600"));
   check("available = old remaining 7:25", inputs.some(i=>i.value==="7:25"));
-  check("date carried", inputs.some(i=>i.value==="14.07.2026"));
+  // Carry-over must NOT copy the outgoing card's date — it should show today's,
+  // computed the same way todayString() does (dd.mm.yyyy, local system date).
+  const today = new Date();
+  const todayStr = `${String(today.getDate()).padStart(2,"0")}.${String(today.getMonth()+1).padStart(2,"0")}.${today.getFullYear()}`;
+  check("date NOT carried — shows today, not the outgoing card's 14.07.2026", inputs.some(i=>i.value===todayStr));
   // new card rows are 7 and empty
   click(btn("FLIGHTS")); await sleep(300);
   t = d.getElementById("root").textContent;
