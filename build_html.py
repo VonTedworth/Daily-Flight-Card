@@ -1,6 +1,13 @@
+import datetime
+
 js = open('build/app.js').read()
 # escape closing script tags just in case
 js = js.replace('</script>', '<\\/script>')
+
+# Stamped fresh on every build (dd.mm.yyyy, matching the app's own date
+# convention) so the version footer can never show a stale date even if
+# the version number itself isn't bumped for a given change.
+build_date = datetime.date.today().strftime('%d.%m.%Y')
 
 html = f'''<!DOCTYPE html>
 <html lang="en">
@@ -20,6 +27,7 @@ html = f'''<!DOCTYPE html>
 </head>
 <body>
 <div id="root"></div>
+<script>window.__BUILD_DATE__ = "{build_date}";</script>
 <script>
 {js}
 </script>

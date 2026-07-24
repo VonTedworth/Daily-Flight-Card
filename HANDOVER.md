@@ -31,6 +31,15 @@ Repo root needs `index.html` + `README.md`. GitHub Pages serves from main/(root)
 Commit + push = deployed. Hard-refresh Safari on the phone; home-screen icon may
 need delete/re-add for meta-tag changes (iOS caches aggressively).
 
+## Version stamp
+`APP_VERSION` in `src/app.jsx` (top of file) is shown in a small footer on
+every tab, next to the build date. **Bump `APP_VERSION` by one on every
+change that gets built + committed** — it's how Ed confirms on the phone
+which build is actually live. The date next to it is stamped automatically
+by `build_html.py` at build time (today's date, `dd.mm.yyyy`), so it can
+never go stale even if a version bump is forgotten — but the version number
+should still be bumped every time.
+
 ## Testing limits
 - jsdom can't do geolocation or the share sheet: the HEMS grid button and PDF
   export must be tested on the live HTTPS deployment on a real phone.
@@ -43,8 +52,9 @@ need delete/re-add for meta-tag changes (iOS caches aggressively).
 - 4600 kg is a maintenance notation threshold, NOT a limit (AUM = 4800 kg).
   Rows show plain grey DEP GW; only >4800 gets an amber warning; the PDF carries
   the one-line "NOTE ON SRP" summary.
-- DEP GW / DEP PERF are DEPARTURE figures via the fuel-inference table in
-  README §2.2 (flight 1 = planned; post-refuel = planned; else previous landed).
+- DEP GW / VAR / VERT margins are DEPARTURE figures via the fuel-inference
+  table in README §2.2 (flight 1 = planned; post-refuel = planned; else
+  previous landed).
 - No per-aircraft weight memory (varies by crew; certified M&B app exists).
 - Power check once per card, six fields, REDO to overwrite.
 - Carry-over: SRP +1, AVAILABLE = previous REMAINING.

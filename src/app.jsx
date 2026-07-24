@@ -60,6 +60,12 @@ const DAY = {
 const C = { ...NIGHT };
 
 const mono = "'IBM Plex Mono', ui-monospace, monospace";
+// Bump by one on every source change that gets built + committed, so Ed can
+// confirm on the phone which build is actually live. BUILD_DATE is stamped
+// automatically by build_html.py at build time — always accurate even if a
+// version bump is forgotten, so the footer can never silently go stale.
+const APP_VERSION = "v1";
+const BUILD_DATE = typeof window !== "undefined" && window.__BUILD_DATE__ ? window.__BUILD_DATE__ : "";
 const NUM_ROWS = 7; // one SRP page has seven sectors
 // >4600 kg is NOT an exceedance — the AW169 all-up mass is 4800 kg.
 // Flights over 4600 must be noted on the SRP (maintenance penalties).
@@ -1945,6 +1951,21 @@ function App() {
               onPowerCheckCancel={handlePowerCheckCancel}
             />
           </div>
+        </div>
+
+        <div
+          style={{
+            textAlign: "center",
+            marginTop: 10,
+            color: C.grey,
+            opacity: 0.6,
+            fontFamily: mono,
+            fontSize: 10,
+            letterSpacing: "0.08em",
+          }}
+        >
+          {APP_VERSION}
+          {BUILD_DATE ? ` · ${BUILD_DATE}` : ""}
         </div>
       </div>
     </div>

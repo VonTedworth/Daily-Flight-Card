@@ -147,6 +147,7 @@ The completed card is archived under PREVIOUS CARDS with its original SRP.
 - localStorage is not indestructible — clearing Safari website data wipes cards. The emailed PDF is the durable record.
 - ☀/☾ (top right): night (dark MFD) / day (high-contrast sunlight) theme, per device.
 - Safe-area padding keeps content clear of the iPhone status bar and home indicator; layout auto-scales on iPads.
+- A small `vN · dd.mm.yyyy` version/build-date stamp sits below the card on every tab, so you can confirm which build is live after a deploy.
 
 ## 7. Assumptions to check before trusting output
 
