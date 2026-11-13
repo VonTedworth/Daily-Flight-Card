@@ -14,6 +14,10 @@ crew relies on.
 - `domtest*.js` — jsdom regression tests, run via `npm test`. They load the BUILT
   html, seed localStorage in `beforeParse`, and assert on rendered text/DOM.
   domtest10/11 cover the page split + carry-over; keep them green.
+- `src/fuelcalc.js` + `src/fuel-planner-dataset.json` — the IFR FUEL tab's pure calc engine
+  and its bundled data (OMA 8H / OMB B34 figures). Unit-tested directly via
+  `build/fuelcalc.cjs` (emitted by `npm run build`; domtest15). Edit figures in the
+  JSON, not in code.
 - `build/` — esbuild output (generated)
 
 ## Commands
@@ -59,6 +63,10 @@ should still be bumped every time.
 - Power check once per card, six fields, REDO to overwrite.
 - Carry-over: SRP +1, AVAILABLE = previous REMAINING.
 - Every feature must be faster than pen and paper; when in doubt, remove.
+- The IFR FUEL tab is an unregulated cross-check: the "Planning cross-check only —
+  not a certified flight-planning tool" disclaimer must stay visible. It is fully
+  offline — **no network request of any kind** (domtest16 fails the build if one
+  is made), no data stored, and it never touches the card or other tabs.
 
 ## Decisions log
 - July 2026 — WX/METAR tab investigated and rejected: aviationweather.gov

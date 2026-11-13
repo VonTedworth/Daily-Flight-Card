@@ -6,7 +6,7 @@ A self-contained web app (single `index.html`, no server, no accounts) replacing
 
 One card = **one SRP page** (seven sectors). Several cards per day is normal; see §4 (carry-over).
 
-The app has three tabs: **A/C DATA** (once-per-SRP setup and admin), **FLIGHTS** (the seven sector rows), **UPLIFT** (fuel calculator). It auto-scales by device: iPhone 1×, iPad mini ≈1.35×, iPad ≈1.55×.
+The app has four tabs: **A/C DATA** (once-per-SRP setup and admin), **FLIGHTS** (the seven sector rows), **UPLIFT** (fuel calculator), **IFR FUEL** (IFR airfield-to-airfield fuel cross-check, §3A). It auto-scales by device: iPhone 1×, iPad mini ≈1.35×, iPad ≈1.55×.
 
 ---
 
@@ -120,6 +120,53 @@ UPLIFT L  = UPLIFT KG ÷ DENSITY
 ```
 
 **Example:** required 650, on board 300, density 0.79 → 350 kg → **443 L**. Inline row refuel is the same formula with REQUIRED = planned and CURRENT = that row's landed fuel; result never goes negative.
+
+---
+
+## 3A. IFR FUEL tab
+
+> **Planning cross-check only — not a certified flight-planning tool. Verify against the OFP and current plates.** It applies the company fuel scheme (OMB B34 §5.2.3) and the alternate/scenario logic (OMA 8H 8.1.3.3.2) to selected airfields so you can gross-error-check your own calculation: *"I have X kg — is it enough, and what are my options?"*
+
+**Fully offline.** Every figure comes from `src/fuel-planner-dataset.json`, bundled into the app at build. Distances and fuel are computed on the device; the tab makes no network request and stores nothing. Units here are the operational standard: fuel **kg** (L = kg ÷ 0.79), distance **nm**.
+
+**Selections.** ORIGIN = any IFR airfield (EGKR Redhill, EGKK, EGKB, EGKA, EGMD, EGMC, EGHI, EGLL, EGLC). DESTINATION and ALTERNATE = any IFR airfield with at least one published approach, so **Redhill is origin-only**. Refuel points (Manston, Rochester) and hospitals are in the dataset but are not selectable in this version. Picking an origin removes it from the destination list; the chosen destination (and, for scenario D, the other alternate) is removed from the alternate lists.
+
+**Distance.** Great-circle (haversine), nm, **rounded to whole nm first** so every kg figure can be reproduced by hand from the nm shown on screen.
+
+```
+LEG(nm) = round( nm ÷ 130 kt × 280 kg/hr )
+```
+
+**Breakdown table** (OMB §5.2.3 layout — # · REQUIREMENT · L · KG):
+
+| Line | kg |
+|---|---|
+| START & TAXI | 30, editable |
+| TRIP | LEG(origin → destination) |
+| ALTERNATE | LEG(destination → alternate); scenarios B, C, D only. Scenario D uses the **farther** of the two chosen alternates |
+| CONTINGENCY 10% | round(0.10 × TRIP) |
+| FINAL RESERVE | 150 |
+| IFR APPROACHES | count × 70; −/+ stepper, default per scenario |
+| PinS / 2-APP (15 MIN) | **Scenario A only:** round(15 ÷ 60 × 280) = 70 |
+| DISCRETIONARY | editable, default 0 |
+
+`REQUIRED = Σ`, `MARGIN = FUEL ON BOARD − REQUIRED`. **ENOUGH +n** (green) when margin ≥ 0, **SHORT −n** (amber) when negative. Changing scenario resets the approach count to that scenario's default.
+
+| Scenario | Alternate line | Approaches (default) | Notes |
+|---|---|---|---|
+| VMC | none | 1 | Destination forecast VMC 1 hr either side of ETA |
+| A | none | 2 | + PinS / 2-app 70 kg; two independent approaches, ceiling ≥ DH + 400 ft, vis ≥ 3000 m |
+| B | 1 alternate | 2 | Alternate forecast ≥ RVR/vis + 400 m, ceiling ≥ DH/MDH + 200 ft |
+| C | 1 alternate | 2 | Fuel identical to B; differs only in the minima pad (+800 m / +400 ft) |
+| D | 2 alternates (farther) | 3 | |
+
+The ceiling/visibility figures are shown as the scenario descriptor text only — **this version does not check weather against them**.
+
+**Indicative flags** (not certified): an amber note when `0 ≤ margin < 75 kg` ("margin below engine-failure 15-min hold"); and when REQUIRED exceeds the 904 kg usable fuel. Over-MTOM is handled on the A/C DATA page, not here.
+
+**Worked example (gross-error check):** Redhill → Shoreham (23 nm), alternate Gatwick (19 nm), scenario B, 500 kg on board → TRIP 50, ALTERNATE 41, CONTINGENCY 5, 2 approaches 140, START & TAXI 30, FINAL RESERVE 150 → **REQUIRED 416, ENOUGH +84**.
+
+**Verify before trusting:** airfield coordinates are published ARP and hospital coordinates are approximate — confirm against the current eAIP. The approach DH values in the dataset are OMA 8H **system-minima floors by approach type, not published airfield OCH**; the actual DH comes from the company plate and is usually higher. They do not affect fuel in this version.
 
 ---
 

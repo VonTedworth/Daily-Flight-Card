@@ -4,8 +4,8 @@
   "description": "GAMA KSS daily flight card + fuel uplift web app (single-file, offline, GitHub Pages)",
   "main": "index.js",
   "scripts": {
-    "build": "esbuild src/app.jsx --loader:.jsx=jsx --jsx=automatic --bundle --minify --outfile=build/app.js && python3 build_html.py",
-    "test": "for t in domtest3 domtest4 domtest6 domtest7 domtest8 domtest10 domtest11 domtest12 domtest13 domtest14; do echo \"== $t\"; node $t.js || exit 1; done"
+    "build": "esbuild src/app.jsx --loader:.jsx=jsx --jsx=automatic --bundle --minify --outfile=build/app.js && esbuild src/fuelcalc.js --bundle --platform=node --format=cjs --outfile=build/fuelcalc.cjs --log-level=warning && python3 build_html.py",
+    "test": "for t in domtest3 domtest4 domtest6 domtest7 domtest8 domtest10 domtest11 domtest12 domtest13 domtest14 domtest15 domtest16; do echo \"== $t\"; node $t.js || exit 1; done"
   },
   "keywords": [],
   "author": "",

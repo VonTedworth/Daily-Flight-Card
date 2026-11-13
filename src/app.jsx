@@ -1,6 +1,15 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import { jsPDF } from "jspdf";
+import {
+  AC,
+  SCENARIO_ORDER,
+  SCENARIO_TEXT,
+  computeFuel,
+  defaultApproaches,
+  originSites,
+  destSites,
+} from "./fuelcalc.js";
 
 // ═══════════════════════════════════════════════════════════
 // Fuel Uplift + Daily Flight Card — v10
@@ -64,7 +73,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v1";
+const APP_VERSION = "v2";
 const BUILD_DATE = typeof window !== "undefined" && window.__BUILD_DATE__ ? window.__BUILD_DATE__ : "";
 const NUM_ROWS = 7; // one SRP page has seven sectors
 // >4600 kg is NOT an exceedance — the AW169 all-up mass is 4800 kg.
@@ -1787,6 +1796,254 @@ function FlightCard({
 // App shell
 // ═══════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════
+// TAB — IFR FUEL planner (offline cross-check, AW169)
+// All figures come from the bundled dataset (src/fuel-planner-dataset.json);
+// the maths lives in src/fuelcalc.js. No network, no storage: nothing here
+// touches any other tab or the card.
+// ═══════════════════════════════════════════════════════════
+
+const signed = (n) => `${n > 0 ? "+" : ""}${n}`;
+
+function IfrFuel() {
+  const [origin, setOrigin] = useState("");
+  const [dest, setDest] = useState("");
+  const [alt1, setAlt1] = useState("");
+  const [alt2, setAlt2] = useState("");
+  const [scenario, setScenario] = useState("B");
+  const [fob, setFob] = useState("");
+  const [startTaxi, setStartTaxi] = useState(String(AC.start_taxi_default_kg));
+  const [apps, setApps] = useState(null); // null = scenario default
+  const [disc, setDisc] = useState("");
+
+  const needAlts = scenario === "D" ? 2 : scenario === "B" || scenario === "C" ? 1 : 0;
+  const approaches = apps === null ? defaultApproaches(scenario) : apps;
+
+  const r = computeFuel({
+    origin,
+    dest,
+    alts: [alt1, alt2],
+    scenario,
+    fob: fob === "" ? null : parseNum(fob),
+    startTaxi: startTaxi === "" ? 0 : parseNum(startTaxi),
+    approaches,
+    discretionary: disc === "" ? 0 : parseNum(disc),
+  });
+
+  const pickOrigin = (id) => {
+    setOrigin(id);
+    if (dest === id) setDest("");
+  };
+  const pickDest = (id) => {
+    setDest(id);
+    if (alt1 === id) setAlt1("");
+    if (alt2 === id) setAlt2("");
+  };
+  // Functional update so rapid taps always register (no stale render-time count).
+  const stepApproaches = (delta) =>
+    setApps((prev) => Math.min(9, Math.max(0, (prev === null ? defaultApproaches(scenario) : prev) + delta)));
+  const pickScenario = (id) => {
+    setScenario(id);
+    setApps(null);
+  };
+
+  const selectStyle = {
+    ...inputStyle(14),
+    ...inputWell(),
+    display: "block",
+    padding: "8px 10px",
+    appearance: "none",
+    WebkitAppearance: "none",
+    cursor: "pointer",
+  };
+  const siteSelect = (lab, value, onChange, sites, right) => (
+    <label key={lab} style={{ display: "block" }}>
+      <span style={{ ...label(), display: "flex", justifyContent: "space-between", fontSize: 10, marginBottom: 4 }}>
+        <span>{lab}</span>
+        <span style={{ color: C.cyan }}>{right}</span>
+      </span>
+      <select value={value} onChange={(e) => onChange(e.target.value)} style={selectStyle}>
+        <option value="">SELECT</option>
+        {sites.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.icao} {s.name.toUpperCase()}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+
+  const dests = destSites().filter((s) => s.id !== origin);
+  const alts1 = destSites().filter((s) => s.id !== dest && s.id !== alt2);
+  const alts2 = destSites().filter((s) => s.id !== dest && s.id !== alt1);
+
+  const numInput = (value, onChange, width = 56) => (
+    <input
+      value={value}
+      inputMode="numeric"
+      onChange={(e) => onChange(SAN.int(e.target.value))}
+      style={{
+        ...inputStyle(13),
+        flex: "none",
+        width,
+        textAlign: "right",
+        background: C.inputBg,
+        border: `1px solid ${C.edge}`,
+        borderRadius: 4,
+        padding: "3px 6px",
+        boxSizing: "border-box",
+      }}
+    />
+  );
+
+  const cols = { display: "grid", gridTemplateColumns: "24px 1fr 46px 60px", gap: 6, alignItems: "center" };
+  const cell = { fontFamily: mono, fontSize: 12, fontWeight: 600, color: C.white };
+  const num = { ...cell, textAlign: "right" };
+  const rowBox = { ...cols, padding: "7px 0", borderBottom: `1px solid ${C.edge}` };
+  const stepBtn = { ...miniBtn(C.cyan), padding: "2px 10px", fontSize: 13, lineHeight: 1.2 };
+
+  const lineRow = (ln) => (
+    <div key={ln.key} style={rowBox} data-line={ln.key}>
+      <span style={{ ...cell, color: C.grey }}>{ln.serial}</span>
+      <div style={cell}>
+        <div>{ln.label}</div>
+        {ln.key === "approaches" && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 5 }}>
+            <button aria-label="fewer approaches" onClick={() => stepApproaches(-1)} style={stepBtn}>
+              −
+            </button>
+            <span style={{ color: C.cyan, minWidth: 14, textAlign: "center" }}>{ln.count}</span>
+            <button aria-label="more approaches" onClick={() => stepApproaches(1)} style={stepBtn}>
+              +
+            </button>
+            <span style={{ color: C.grey, fontWeight: 500 }}>× {AC.per_ifr_approach_kg}</span>
+          </div>
+        )}
+      </div>
+      <span style={{ ...num, color: C.grey }}>{ln.l === null ? "—" : ln.l}</span>
+      {ln.key === "startTaxi" ? (
+        numInput(startTaxi, setStartTaxi)
+      ) : ln.key === "discretionary" ? (
+        numInput(disc, setDisc)
+      ) : (
+        <span style={num}>{ln.kg === null ? "—" : ln.kg}</span>
+      )}
+    </div>
+  );
+
+  const verdict = (() => {
+    if (r.incomplete === "route") return { text: "SELECT ORIGIN AND DESTINATION", color: C.grey, size: 12 };
+    if (r.incomplete === "alternate")
+      return { text: needAlts === 2 ? "SELECT BOTH ALTERNATES" : "SELECT ALTERNATE", color: C.grey, size: 12 };
+    if (r.incomplete) return { text: "CHECK SELECTIONS", color: C.grey, size: 12 };
+    if (r.verdict === null) return { text: "ENTER FUEL ON BOARD", color: C.grey, size: 12 };
+    return r.verdict === "ENOUGH"
+      ? { text: `ENOUGH ${signed(r.margin)} KG`, color: C.green, size: 22 }
+      : { text: `SHORT ${r.margin} KG`, color: C.amber, size: 22 };
+  })();
+
+  return (
+    <>
+      <PanelHeader title="IFR FUEL" subtitle="AW169 CROSS-CHECK" />
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
+        {siteSelect("ORIGIN", origin, pickOrigin, originSites())}
+        {siteSelect("DESTINATION", dest, pickDest, dests, r.tripNm !== null ? `${r.tripNm} NM` : "")}
+        {needAlts >= 1 &&
+          siteSelect(needAlts === 2 ? "ALTERNATE 1" : "ALTERNATE", alt1, setAlt1, alts1, needAlts === 1 && r.altnNm !== null ? `${r.altnNm} NM` : "")}
+        {needAlts === 2 && siteSelect("ALTERNATE 2", alt2, setAlt2, alts2, r.altnNm !== null ? `FARTHER ${r.altnNm} NM` : "")}
+      </div>
+
+      <span style={{ ...label(), fontSize: 10, marginBottom: 4 }}>SCENARIO</span>
+      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+        {SCENARIO_ORDER.map((id) => (
+          <button
+            key={id}
+            onClick={() => pickScenario(id)}
+            aria-pressed={scenario === id}
+            style={{
+              flex: 1,
+              background: scenario === id ? C.inputBg : "transparent",
+              border: `1px solid ${scenario === id ? C.cyan : C.edge}`,
+              borderRadius: 6,
+              color: scenario === id ? C.cyan : C.grey,
+              fontFamily: mono,
+              fontSize: 13,
+              fontWeight: 600,
+              padding: "9px 0",
+              cursor: "pointer",
+            }}
+          >
+            {id}
+          </button>
+        ))}
+      </div>
+      <div style={{ color: C.grey, fontFamily: mono, fontSize: 11, lineHeight: 1.5, marginBottom: 16, minHeight: 50 }}>
+        {SCENARIO_TEXT[scenario]}
+      </div>
+
+      <label style={{ display: "block", marginBottom: 16 }}>
+        <span style={{ ...label(), fontSize: 10, marginBottom: 4 }}>FUEL ON BOARD KG</span>
+        <input
+          value={fob}
+          inputMode="numeric"
+          onChange={(e) => setFob(SAN.int(e.target.value))}
+          style={{ ...inputStyle(16), ...inputWell(), display: "block", padding: "8px 10px" }}
+        />
+      </label>
+
+      {r.lines.length > 0 && r.incomplete !== "route" && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ ...cols, paddingBottom: 6, borderBottom: `1px solid ${C.edge}` }}>
+            {["#", "REQUIREMENT", "L", "KG"].map((h, i) => (
+              <span key={h} style={{ ...label(), fontSize: 9, margin: 0, textAlign: i >= 2 ? "right" : "left" }}>
+                {h}
+              </span>
+            ))}
+          </div>
+          {r.lines.map(lineRow)}
+          {r.required !== null && (
+            <div style={{ ...cols, padding: "9px 0 0" }} data-line="required">
+              <span />
+              <span style={{ ...cell, fontWeight: 700 }}>REQUIRED</span>
+              <span style={{ ...num, color: C.grey }}>{Math.round(r.required / AC.fuel_density_kg_per_l)}</span>
+              <span style={{ ...num, fontWeight: 700 }}>{r.required}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div
+        data-verdict
+        style={{
+          textAlign: "center",
+          fontFamily: mono,
+          fontWeight: 700,
+          letterSpacing: "0.1em",
+          fontSize: verdict.size,
+          color: verdict.color,
+          padding: "14px 10px",
+          border: `1px solid ${verdict.color === C.grey ? C.edge : verdict.color + "80"}`,
+          borderRadius: 8,
+          marginBottom: 12,
+        }}
+      >
+        {verdict.text}
+      </div>
+
+      {r.flags.map((f) => (
+        <div key={f} style={{ color: C.amber, fontFamily: mono, fontSize: 11, lineHeight: 1.5, marginBottom: 6 }}>
+          ⚠ {f.toUpperCase()}
+        </div>
+      ))}
+
+      <p style={{ marginTop: 14, marginBottom: 0, color: C.grey, fontSize: 10.5, lineHeight: 1.6, fontFamily: mono }}>
+        Planning cross-check only — not a certified flight-planning tool. Verify against the OFP and current plates.
+      </p>
+    </>
+  );
+}
+
 function App() {
   const [tab, setTab] = useState("card");
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "night");
@@ -1853,9 +2110,13 @@ function App() {
         borderRadius: 8,
         color: tab === id ? C.cyan : C.grey,
         fontFamily: mono,
-        fontSize: 12,
+        // Four tabs + theme toggle must share one row at 375px: slightly tighter
+        // than the original three-tab bar, and never wrapping to two lines.
+        fontSize: 11,
         fontWeight: 600,
-        letterSpacing: "0.15em",
+        letterSpacing: "0.05em",
+        whiteSpace: "nowrap",
+        minWidth: 0,
         padding: "12px 0",
         cursor: "pointer",
       }}
@@ -1896,6 +2157,7 @@ function App() {
           {tabBtn("ac", "A/C DATA")}
           {tabBtn("card", "FLIGHTS")}
           {tabBtn("uplift", "UPLIFT")}
+          {tabBtn("ifr", "IFR FUEL")}
           <button
             onClick={toggleTheme}
             aria-label="toggle day/night mode"
@@ -1950,6 +2212,9 @@ function App() {
               onPowerCheckConfirm={handlePowerCheckConfirm}
               onPowerCheckCancel={handlePowerCheckCancel}
             />
+          </div>
+          <div style={{ display: tab === "ifr" ? "block" : "none" }}>
+            <IfrFuel />
           </div>
         </div>
 
