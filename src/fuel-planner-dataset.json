@@ -66,17 +66,17 @@
     { "id": "EGMH", "icao": "EGMH", "name": "Manston",        "type": "refuel_vfr", "lat": 51.3422, "lon": 1.3461, "fuel": true },
     { "id": "EGTO", "icao": "EGTO", "name": "Rochester",      "type": "refuel_vfr", "lat": 51.3517, "lon": 0.5033, "fuel": true },
 
-    { "id": "H_RSCH",  "name": "Royal Sussex County, Brighton", "type": "hospital", "lat": 50.8190, "lon": -0.1170 },
-    { "id": "H_WHH",   "name": "William Harvey, Ashford",       "type": "hospital", "lat": 51.1360, "lon": 0.9000 },
-    { "id": "H_KCH",   "name": "King's College, Denmark Hill",  "type": "hospital", "lat": 51.4680, "lon": -0.0940 },
-    { "id": "H_SGH",   "name": "St George's, Tooting",          "type": "hospital", "lat": 51.4270, "lon": -0.1750 },
-    { "id": "H_MAID",  "name": "Maidstone",                     "type": "hospital", "lat": 51.2480, "lon": 0.4950 },
-    { "id": "H_PEM",   "name": "Tunbridge Wells (Pembury)",     "type": "hospital", "lat": 51.1480, "lon": 0.3170 },
-    { "id": "H_STM",   "name": "St Mary's, Isle of Wight",      "type": "hospital", "lat": 50.7120, "lon": -1.3080 },
-    { "id": "H_QA",    "name": "Queen Alexandra, Portsmouth",   "type": "hospital", "lat": 50.8530, "lon": -1.0680 },
-    { "id": "H_QEQM",  "name": "QEQM, Margate",                 "type": "hospital", "lat": 51.3830, "lon": 1.4050 },
-    { "id": "H_FPH",   "name": "Frimley Park",                  "type": "hospital", "lat": 51.3070, "lon": -0.7140 },
-    { "id": "H_EDGH",  "name": "Eastbourne DGH",                "type": "hospital", "lat": 50.7870, "lon": 0.2790 },
-    { "id": "H_SGEN",  "name": "Southampton General",           "type": "hospital", "lat": 50.9330, "lon": -1.4350 }
+    { "id": "H_RSCH",  "name": "Royal Sussex County, Brighton", "type": "hospital", "short": "RSCH", "lat": 50.8190, "lon": -0.1170 },
+    { "id": "H_WHH",   "name": "William Harvey, Ashford",       "type": "hospital", "short": "WHH", "lat": 51.1360, "lon": 0.9000 },
+    { "id": "H_KCH",   "name": "King's College, Denmark Hill",  "type": "hospital", "short": "KCH", "lat": 51.4680, "lon": -0.0940 },
+    { "id": "H_SGH",   "name": "St George's, Tooting",          "type": "hospital", "short": "SGH", "lat": 51.4270, "lon": -0.1750 },
+    { "id": "H_MAID",  "name": "Maidstone",                     "type": "hospital", "short": "MAID", "lat": 51.2480, "lon": 0.4950 },
+    { "id": "H_PEM",   "name": "Tunbridge Wells (Pembury)",     "type": "hospital", "short": "PEM", "lat": 51.1480, "lon": 0.3170 },
+    { "id": "H_STM",   "name": "St Mary's, Isle of Wight",      "type": "hospital", "short": "STM", "lat": 50.7120, "lon": -1.3080 },
+    { "id": "H_QA",    "name": "Queen Alexandra, Portsmouth",   "type": "hospital", "short": "QA", "lat": 50.8530, "lon": -1.0680 },
+    { "id": "H_QEQM",  "name": "QEQM, Margate",                 "type": "hospital", "short": "QEQM", "lat": 51.3830, "lon": 1.4050 },
+    { "id": "H_FPH",   "name": "Frimley Park",                  "type": "hospital", "short": "FPH", "lat": 51.3070, "lon": -0.7140 },
+    { "id": "H_EDGH",  "name": "Eastbourne DGH",                "type": "hospital", "short": "EDGH", "lat": 50.7870, "lon": 0.2790 },
+    { "id": "H_SGEN",  "name": "Southampton General",           "type": "hospital", "short": "SOTON", "lat": 50.9330, "lon": -1.4350 }
   ]
 }

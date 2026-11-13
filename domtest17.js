@@ -57,23 +57,24 @@ const hosp = f.tapSite(empty, "H_KCH", 1);
 check("hospital: display-only caption, selection unchanged", JSON.stringify(hosp.sel) === JSON.stringify(empty) && /hospital \(display only\)/.test(hosp.note));
 check("refuel point: display-only caption", /refuel point \(display only\)/.test(f.tapSite(empty, "EGMH", 1).note) && f.tapSite(empty, "EGMH", 1).sel.origin === "");
 
-// ── label declutter ──
-const sites = f.DATA.sites.filter((s) => s.type !== "hospital").map((s) => ({ id: s.id, text: s.icao, ...f.project(s.lat, s.lon), must: false }));
-const hosps = f.DATA.sites.filter((s) => s.type === "hospital").map((s) => f.project(s.lat, s.lon));
-const lab = f.placeLabels(sites, 6.5, 4.5, hosps);
-const boxes = Object.entries(lab).map(([id, p]) => {
-  const w = f.siteById(id).icao.length * 6.5 * 0.62;
+// ── label placement: every site (airfields, refuel points AND hospitals) is labelled ──
+const all = f.DATA.sites.map((s) => ({ id: s.id, text: s.type === "hospital" ? s.short : s.icao, fs: s.type === "hospital" ? 5.3 : 6.5, must: true, ...f.project(s.lat, s.lon) }));
+const lab = f.placeLabels(all);
+check("every one of the 23 sites gets a label", all.every((i) => lab[i.id]));
+check("all 12 hospitals are labelled with their short name", f.DATA.sites.filter((s) => s.type === "hospital").every((s) => lab[s.id]));
+const boxes = all.map((i) => {
+  const p = lab[i.id], w = i.text.length * i.fs * 0.62;
   const x = p.anchor === "start" ? p.x : p.anchor === "end" ? p.x - w : p.x - w / 2;
-  return { id, x, y: p.y - 6.5 * 0.8, w, h: 6.5 };
+  return { id: i.id, x, y: p.y - i.fs * 0.8, w, h: i.fs };
 });
-const overlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-let clash = 0; boxes.forEach((a, i) => boxes.slice(i + 1).forEach((b) => { if (overlap(a, b)) clash++; }));
-check("declutter: placed labels never overlap each other", clash === 0);
-check("declutter: labels never cover a hospital marker",
-  boxes.every((b) => !hosps.some((h) => h.x > b.x && h.x < b.x + b.w && h.y > b.y && h.y < b.y + b.h)));
-check("declutter: most airfield labels fit (≥ 7 of 9 IFR fields)", f.originSites().filter((s) => lab[s.id]).length >= 7);
-const must = f.placeLabels(sites.map((s) => ({ ...s, must: true })), 6.5, 4.5, hosps);
-check("declutter: 'must' (selected) labels are always placed", sites.every((s) => must[s.id]));
+const overlap = (a2, b2) => a2.x < b2.x + b2.w && b2.x < a2.x + a2.w && a2.y < b2.y + b2.h && b2.y < a2.y + a2.h;
+let clash = 0; boxes.forEach((a2, i) => boxes.slice(i + 1).forEach((b2) => { if (overlap(a2, b2)) clash++; }));
+check(`labels never overlap each other (${clash} clashes)`, clash === 0);
+check("labels never cover another site's marker",
+  boxes.every((b2) => !all.some((m) => m.id !== b2.id && m.x > b2.x - 2 && m.x < b2.x + b2.w + 2 && m.y > b2.y - 2 && m.y < b2.y + b2.h + 2)));
+check("labels stay inside the map frame", boxes.every((b2) => b2.x >= 0 && b2.y >= 0 && b2.x + b2.w <= f.MAP.meta.w && b2.y + b2.h <= f.MAP.meta.h));
+check("a lone non-must label with no room is dropped, a must label is kept",
+  Object.keys(f.placeLabels([{ id: "a", x: 1, y: 1, text: "WIDELABEL", must: false }, { id: "b", x: 1, y: 1, text: "X", must: true }])).includes("b"));
 
 // ── UI ──
 const html = fs.readFileSync("./index.html", "utf8");
@@ -88,6 +89,7 @@ const dom = new JSDOM(html, { runScripts: "dangerously", url: "https://x.github.
   } });
 const w = dom.window, d = w.document;
 const click = (el) => el.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
+const scen = (id) => d.querySelector(`button[data-scenario="${id}"]`);
 const btn = (t) => [...d.querySelectorAll("button")].find((b) => b.textContent.trim() === t);
 const marker = (id) => d.querySelector(`g[data-site="${id}"]`);
 const sel = (lab2) => [...d.querySelectorAll("label")].find((l) => l.querySelector("span > span")?.textContent === lab2)?.querySelector("select");
@@ -100,6 +102,7 @@ const text = () => d.getElementById("root").textContent;
   check("map renders on the IFR FUEL tab", !!svg && svg.getAttribute("viewBox") === `0 0 ${f.MAP.meta.w} ${f.MAP.meta.h}`);
   check("county outlines drawn from bundled geometry", svg.querySelectorAll("path").length === f.MAP.counties.length);
   check("all 23 dataset sites plotted as markers", d.querySelectorAll("g[data-site]").length === f.DATA.sites.length);
+  check("hospital short names are drawn on the map (all 12)", f.DATA.sites.filter((x) => x.type === "hospital").every((x) => d.querySelector(`text[data-label="${x.id}"]`)?.textContent === x.short));
   check("map legend shown", text().includes("ORIGIN") && text().includes("HOSPITAL") && text().includes("REFUEL"));
 
   click(marker("EGKR")); await sleep(80);
@@ -120,12 +123,16 @@ const text = () => d.getElementById("root").textContent;
   sel("ORIGIN").value = "EGKB"; sel("ORIGIN").dispatchEvent(new w.Event("change", { bubbles: true })); await sleep(80);
   check("dropdown change is reflected on the map", marker("EGKB").getAttribute("aria-label").includes("selected") && !marker("EGKR").getAttribute("aria-label").includes("selected"));
 
-  click(btn("D")); await sleep(120);
+  click(scen("D")); await sleep(120);
   click(marker("EGKA")); await sleep(80);   // dest
   click(marker("EGMD")); await sleep(80);   // alt2? first unset alternate is alt1 (Gatwick already)
   check("scenario D: two alternates assignable from the map", sel("ALTERNATE 1").value === "EGKK" && sel("ALTERNATE 2").value === "EGMD");
   check("scenario D: both diversion legs drawn", svg.querySelectorAll("line").length === 3);
-  click(btn("A")); await sleep(120);
+  const near = (a2, b2) => Math.abs(a2 - b2) < 0.01;
+  const pk = f.project(f.siteById("EGKK").lat, f.siteById("EGKK").lon), pm = f.project(f.siteById("EGMD").lat, f.siteById("EGMD").lon);
+  check("scenario D: second alternate leg runs FROM alternate 1 (Gatwick → Lydd), not from the destination",
+    [...svg.querySelectorAll("line")].some((l) => near(+l.getAttribute("x1"), pk.x) && near(+l.getAttribute("y1"), pk.y) && near(+l.getAttribute("x2"), pm.x) && near(+l.getAttribute("y2"), pm.y)));
+  click(scen("A")); await sleep(120);
   check("scenario A: alternate legs hidden from the map", svg.querySelectorAll("line").length === 1);
 
   check("map added no network calls", net === 0);

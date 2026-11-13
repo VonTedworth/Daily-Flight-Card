@@ -20,6 +20,7 @@ const dom = new JSDOM(html, { runScripts: "dangerously", url: "https://x.github.
   } });
 const w = dom.window, d = w.document;
 const click = (el) => el.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
+const scen = (id) => d.querySelector(`button[data-scenario="${id}"]`);
 const btn = (t) => [...d.querySelectorAll("button")].find((b) => b.textContent.trim() === t);
 const text = () => d.getElementById("root").textContent;
 // IFR FUEL site dropdowns all start with a "SELECT" placeholder (the AC REG select does not)
@@ -50,7 +51,8 @@ const verdictEl = () => d.querySelector("[data-verdict]");
   let [selO, selD, selA] = selects();
   check("three dropdowns: origin, destination, alternate", !!selO && !!selD && !!selA);
   check("Redhill selectable as origin only", [...selO.options].some((o) => o.value === "EGKR") && ![...selD.options, ...selA.options].some((o) => o.value === "EGKR"));
-  check("scenario strip VMC · A · B · C · D", ["VMC", "A", "B", "C", "D"].every((s) => !!btn(s)));
+  check("scenario strip VMC · A · B · C · D", ["VMC", "A", "B", "C", "D"].every((s) => !!scen(s)));
+  check("scenario buttons carry a plan-type hint (A: NO ALTN / 2 APPS, B: 1 ALTN, D: 2 ALTN)", scen("A").textContent.includes("NO ALTN") && scen("A").textContent.includes("2 APPS") && scen("B").textContent.includes("1 ALTN") && scen("D").textContent.includes("2 ALTN"));
   check("scenario descriptor shown (default B)", text().includes("One alternate."));
 
   // ── worked example: Redhill → Shoreham, altn Gatwick, B, 500 kg ──
@@ -92,23 +94,24 @@ const verdictEl = () => d.querySelector("[data-verdict]");
   check("approach stepper −: 1 approach, 70 kg", kgOf("approaches") === 70);
 
   // ── scenario A ──
-  click(btn("A")); await sleep(120);
+  click(scen("A")); await sleep(120);
   check("A: no Alternate line and no alternate dropdown", !lineEl("alternate") && selects().length === 2);
   check("A: PinS / 2-app 70 kg line present", !!lineEl("pins") && kgOf("pins") === 70);
   check("A: approaches reset to scenario default 2", kgOf("approaches") === 140);
   // ── scenario VMC ──
-  click(btn("VMC")); await sleep(120);
+  click(scen("VMC")); await sleep(120);
   check("VMC: no Alternate, no PinS, approaches default 1", !lineEl("alternate") && !lineEl("pins") && kgOf("approaches") === 70);
   // ── scenario D ──
-  click(btn("D")); await sleep(120);
+  click(scen("D")); await sleep(120);
   check("D: two alternate dropdowns (4 selects incl. origin/dest), approaches default 3", selects().length === 4 && kgOf("approaches") === 210);
   check("D with no alternates chosen: asks for both", verdictEl().textContent.includes("SELECT BOTH ALTERNATES"));
   check("D: ALTERNATE 1 / ALTERNATE 2 labels", !!selBy("ALTERNATE 1") && !!selBy("ALTERNATE 2"));
   await setSelect(selBy("ALTERNATE 1"), "EGKK");
   await setSelect(selBy("ALTERNATE 2"), "EGMD");
-  check("D: alternate line names the farther field (EGMD)", lineEl("alternate").textContent.includes("EGMD"));
+  check("D: alternate line names the chain EGKA → EGKK → EGMD", lineEl("alternate").textContent.includes("EGKA → EGKK → EGMD"));
+  check("D: ALTERNATE 2 distance is quoted FROM alternate 1", text().includes("NM FROM EGKK"));
   // ── back to B, alternate missing → asks ──
-  click(btn("B")); await sleep(120);
+  click(scen("B")); await sleep(120);
   check("back to B: single ALTERNATE dropdown, Gatwick kept (41 kg)", selects().length === 3 && selBy("ALTERNATE").value === "EGKK" && kgOf("alternate") === 41);
 
   // ── other tabs unaffected ──

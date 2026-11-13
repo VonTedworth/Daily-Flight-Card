@@ -15,7 +15,16 @@ export const SCENARIO_TEXT = {
   A: "Two independent approaches at one field (ceiling ≥ DH + 400 ft, vis ≥ 3000 m). No alternate; 15 min added to trip fuel.",
   B: "One alternate. Alternate forecast ≥ RVR/vis + 400 m and ceiling ≥ DH/MDH + 200 ft. Full diversion fuel + approaches.",
   C: "One alternate, weather below minima has reasonable probability: alternate ≥ RVR/vis + 800 m, ceiling ≥ DH/MDH + 400 ft. Fuel as B.",
-  D: "Two alternates. Plan fuel to the farther of the two. Three approaches by default.",
+  D: "Two alternates planned in sequence: destination → alternate 1 → alternate 2. Fuel covers the whole chain. Three approaches by default.",
+};
+
+// Two-line hint printed inside each scenario button, so the plan type is readable at a glance.
+export const SCENARIO_HINT = {
+  VMC: ["NO ALTN", "1 APP"],
+  A: ["NO ALTN", "2 APPS"],
+  B: ["1 ALTN", "+400M"],
+  C: ["1 ALTN", "+800M"],
+  D: ["2 ALTN", "CHAIN"],
 };
 
 const NM_M = 1852;
@@ -60,7 +69,7 @@ export function computeFuel(p) {
   const sc = DATA.oma_rules.scenarios[p.scenario];
   const origin = siteById(p.origin);
   const dest = siteById(p.dest);
-  const out = { incomplete: null, tripNm: null, altnNm: null, lines: [], required: null, margin: null, verdict: null, flags: [] };
+  const out = { incomplete: null, tripNm: null, altnNm: null, altLegs: [], lines: [], required: null, margin: null, verdict: null, flags: [] };
   if (!sc) { out.incomplete = "scenario"; return out; }
   if (!origin || !dest) { out.incomplete = "route"; return out; }
   if (origin.id === dest.id) { out.incomplete = "same"; return out; }
@@ -70,18 +79,28 @@ export function computeFuel(p) {
   const trip = legKg(tripNm);
   const contingency = Math.round((DATA.oma_rules.contingency_pct_ifr / 100) * trip);
 
-  // Alternate line: B/C one alternate, D the farther of two; none for VMC/A.
+  // Alternate line: B/C one alternate (dest → alt). D: two alternates planned IN SEQUENCE —
+  // dest → alt1, then alt1 → alt2 — and the line covers the whole chain (sum of the legs).
+  // (Replaces the old "farther of the two from the destination" rule.)
   let altKg = null;
   let altLabel = "ALTERNATE";
-  if (sc.alt_fuel) {
-    const need = sc.alternates;
-    const chosen = (p.alts || []).slice(0, need).map(siteById).filter(Boolean);
-    if (chosen.length === need) {
-      const dists = chosen.map((a) => wholeNm(dest, a));
-      const far = Math.max(...dists);
-      out.altnNm = far;
-      altKg = legKg(far);
-      if (need === 2) altLabel = `ALTERNATE (FARTHER: ${chosen[dists.indexOf(far)].icao})`;
+  let altSub = null;
+  const need = sc.alt_fuel ? sc.alternates : 0;
+  if (need) {
+    const chosen = (p.alts || []).slice(0, need).map(siteById);
+    // legs are reported as soon as their endpoints exist, even while the plan is incomplete
+    const legs = [];
+    if (chosen[0]) legs.push(wholeNm(dest, chosen[0]));
+    if (need === 2 && chosen[0] && chosen[1]) legs.push(wholeNm(chosen[0], chosen[1]));
+    out.altLegs = legs;
+    if (legs.length === need) {
+      const totalNm = legs.reduce((a, b) => a + b, 0);
+      out.altnNm = totalNm;
+      altKg = legKg(totalNm);
+      if (need === 2) {
+        altLabel = "ALTERNATES";
+        altSub = `${dest.icao} → ${chosen[0].icao} → ${chosen[1].icao} · ${legs[0]} + ${legs[1]} NM`;
+      }
     } else {
       out.incomplete = "alternate";
     }
@@ -95,7 +114,7 @@ export function computeFuel(p) {
   const add = (key, label, kg, extra) => lines.push({ key, label, kg, l: kg === null ? null : kgToL(kg), ...extra });
   add("startTaxi", "START & TAXI", startTaxi);
   add("trip", "TRIP", trip);
-  if (sc.alt_fuel) add("alternate", altLabel, altKg);
+  if (sc.alt_fuel) add("alternate", altLabel, altKg, altSub ? { sub: altSub } : {});
   add("contingency", "CONTINGENCY 10%", contingency);
   add("finalReserve", "FINAL RESERVE", AC.final_reserve_ifr_kg);
   add("approaches", "IFR APPROACHES", approachCount * AC.per_ifr_approach_kg, { count: approachCount });
@@ -160,36 +179,52 @@ export function tapSite(sel, id, needAlts) {
 }
 
 /**
- * Greedy label declutter. items: [{id, x, y, text, must}] in priority order (selected
- * roles first). Tries right / left / above / below of each marker and keeps the first
- * spot that overlaps no placed label and no marker. Unplaceable optional labels are
- * dropped (revealed by tapping); `must` labels are always placed (first candidate).
- * obstacles: extra {x,y} marker positions (e.g. hospitals) labels must not cover.
+ * Label placement. items: [{id, x, y, text, fs?, must?}] in priority order (selected roles
+ * first). For each item try 8 compass positions at two radii and keep the first that overlaps
+ * no placed label and no marker. If nothing is clean, `must` items take the least-overlapping
+ * spot (so every airfield and hospital is always labelled); others are dropped.
+ * obstacles: extra {x,y} marker positions that labels must avoid.
  */
-export function placeLabels(items, fs = 6.5, markerR = 4.5, obstacles = []) {
+export function placeLabels(items, obstacles = [], markerR = 4.5) {
   const placed = [];
   const out = {};
-  // every marker (labelled or not, hospitals included) is an obstacle for every label
   const markers = [...items.map((i) => ({ x: i.x, y: i.y })), ...obstacles];
   const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
   const W = GEO.meta.w, H = GEO.meta.h;
   for (const it of items) {
+    const fs = it.fs || 6.5;
     const w = it.text.length * fs * 0.62, h = fs;
-    const cand = [
-      { x: it.x + markerR + 1, y: it.y - h / 2, anchor: "start" },
-      { x: it.x - markerR - 1 - w, y: it.y - h / 2, anchor: "end" },
-      { x: it.x - w / 2, y: it.y - markerR - 1 - h, anchor: "middle" },
-      { x: it.x - w / 2, y: it.y + markerR + 1, anchor: "middle" },
-    ].map((c) => ({ ...c, w, h }));
-    const ok = (c) =>
-      c.x >= 0 && c.y >= 0 && c.x + w <= W && c.y + h <= H &&
-      !placed.some((p) => hit(c, p)) &&
-      !markers.some((m) => m.x > c.x - markerR && m.x < c.x + w + markerR && m.y > c.y - markerR && m.y < c.y + h + markerR);
-    const pick = cand.find(ok) || (it.must ? cand[0] : null);
-    if (pick) {
-      placed.push(pick);
-      const tx = pick.anchor === "start" ? pick.x : pick.anchor === "end" ? pick.x + w : pick.x + w / 2;
-      out[it.id] = { x: tx, y: pick.y + h * 0.8, anchor: pick.anchor };
+    const cands = [];
+    for (const r of [markerR + 1, markerR + 6.5]) {
+      const d = r * 0.72;
+      cands.push(
+        { x: it.x + r, y: it.y - h / 2, anchor: "start" },
+        { x: it.x - r - w, y: it.y - h / 2, anchor: "end" },
+        { x: it.x - w / 2, y: it.y - r - h, anchor: "middle" },
+        { x: it.x - w / 2, y: it.y + r, anchor: "middle" },
+        { x: it.x + d, y: it.y - d - h, anchor: "start" },
+        { x: it.x - d - w, y: it.y - d - h, anchor: "end" },
+        { x: it.x + d, y: it.y + d, anchor: "start" },
+        { x: it.x - d - w, y: it.y + d, anchor: "end" }
+      );
+    }
+    const cost = (c) => {
+      let n = 0;
+      if (c.x < 0 || c.y < 0 || c.x + w > W || c.y + h > H) n += 100;
+      n += 10 * placed.filter((p) => hit({ ...c, w, h }, p)).length;
+      n += markers.filter((m) => m.x > c.x - markerR && m.x < c.x + w + markerR && m.y > c.y - markerR && m.y < c.y + h + markerR).length;
+      return n;
+    };
+    let best = null, bestCost = Infinity;
+    for (const c of cands) {
+      const k = cost(c);
+      if (k < bestCost) { best = c; bestCost = k; }
+      if (k === 0) break;
+    }
+    if (bestCost === 0 || it.must) {
+      placed.push({ ...best, w, h });
+      const tx = best.anchor === "start" ? best.x : best.anchor === "end" ? best.x + w : best.x + w / 2;
+      out[it.id] = { x: tx, y: best.y + h * 0.8, anchor: best.anchor, fs };
     }
   }
   return out;

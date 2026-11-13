@@ -38,13 +38,24 @@ check("Scenario A: approaches default 2", line(a, "approaches").count === 2);
 const v = f.computeFuel({ ...base, scenario: "VMC", alts: [] });
 check("Scenario VMC: no Alternate line, no PinS line", !line(v, "alternate") && !line(v, "pins"));
 check("Scenario VMC: approaches default 1 (70 kg)", line(v, "approaches").count === 1 && line(v, "approaches").kg === 70);
-const d = f.computeFuel({ ...base, scenario: "D", alts: ["EGKK", "EGMD"] });
-const dFar = Math.round(f.haversineNm(f.siteById("EGKA"), f.siteById("EGMD")));
-check("Scenario D: alternate = FARTHER of the two (Lydd, not Gatwick)", d.altnNm === dFar && dFar > Math.round(nm2) && line(d, "alternate").kg === f.legKg(dFar));
-check("Scenario D: label names the farther field", /EGMD/.test(line(d, "alternate").label));
+// Scenario D: alternates are planned IN SEQUENCE — dest → alt1, then alt1 → alt2.
+// Ed's example: Redhill → Lydd, alternate 1 Biggin Hill, alternate 2 Gatwick.
+const dEx = { origin: "EGKR", dest: "EGMD", alts: ["EGKB", "EGKK"], scenario: "D", fob: 600 };
+const d = f.computeFuel(dEx);
+const nm = (a, b2) => Math.round(f.haversineNm(f.siteById(a), f.siteById(b2)));
+const l1 = nm("EGMD", "EGKB"), l2 = nm("EGKB", "EGKK");
+check(`Scenario D: trip is Redhill→Lydd (${d.tripNm} nm)`, d.tripNm === nm("EGKR", "EGMD"));
+check(`Scenario D: leg 1 = Lydd→Biggin Hill (${l1} nm), leg 2 = Biggin Hill→Gatwick (${l2} nm)`, d.altLegs[0] === l1 && d.altLegs[1] === l2);
+check("Scenario D: alternate 2 is measured from alternate 1, NOT from the destination", d.altLegs[1] !== nm("EGMD", "EGKK") && d.altLegs[1] === l2);
+check("Scenario D: Alternate line covers the whole chain (legs summed)", d.altnNm === l1 + l2 && line(d, "alternate").kg === f.legKg(l1 + l2));
+check("Scenario D: Alternate line names the route and both legs", line(d, "alternate").sub === `EGMD → EGKB → EGKK · ${l1} + ${l2} NM`);
 check("Scenario D: approaches default 3", line(d, "approaches").count === 3);
-const dSwap = f.computeFuel({ ...base, scenario: "D", alts: ["EGMD", "EGKK"] });
-check("Scenario D: alternate order does not matter", dSwap.required === d.required);
+const dSwap = f.computeFuel({ ...dEx, alts: ["EGKK", "EGKB"] });
+check("Scenario D: order matters — swapping the alternates re-plans the legs",
+  dSwap.altLegs[0] === nm("EGMD", "EGKK") && dSwap.altLegs[1] === nm("EGKK", "EGKB") && dSwap.altLegs[0] !== d.altLegs[0]);
+const dHalf = f.computeFuel({ ...dEx, alts: ["EGKB"] });
+check("Scenario D: leg 1 is reported as soon as alternate 1 is chosen (plan still incomplete)", dHalf.altLegs.length === 1 && dHalf.altLegs[0] === l1 && dHalf.incomplete === "alternate" && dHalf.required === null);
+check("B/C: single leg destination→alternate reported", f.computeFuel(base).altLegs.length === 1 && f.computeFuel(base).altLegs[0] === 19);
 
 // ── Verdict, flags ──
 const short = f.computeFuel({ ...base, fob: b.required - 10 });
@@ -75,6 +86,11 @@ check("D with one alternate → still incomplete", f.computeFuel({ ...base, scen
 check("origin = destination → incomplete 'same'", f.computeFuel({ ...base, dest: "EGKR" }).incomplete === "same");
 check("unknown scenario → incomplete, no throw", f.computeFuel({ ...base, scenario: "Z" }).incomplete === "scenario");
 
+// ── Scenario hints (printed inside the buttons) ──
+check("every scenario has a two-line hint", f.SCENARIO_ORDER.every((k) => Array.isArray(f.SCENARIO_HINT[k]) && f.SCENARIO_HINT[k].length === 2));
+check("hints state the plan type (alternates / approaches)", /NO ALTN/.test(f.SCENARIO_HINT.A[0]) && /2 APPS/.test(f.SCENARIO_HINT.A[1]) && /1 ALTN/.test(f.SCENARIO_HINT.B[0]) && /2 ALTN/.test(f.SCENARIO_HINT.D[0]));
+check("D descriptor describes the sequence", /alternate 1 → alternate 2/.test(f.SCENARIO_TEXT.D));
+
 // ── Dataset integrity ──
 const ifr = f.DATA.sites.filter((s) => s.type === "airfield_ifr");
 const dests = f.destSites().map((s) => s.id);
@@ -84,6 +100,7 @@ check("Redhill is origin-only (no approaches)", origins.includes("EGKR") && !des
 check("every airfield_ifr is selectable as origin", ifr.every((s) => origins.includes(s.id)));
 check("refuel points and hospitals are display-only (not selectable)",
   f.DATA.sites.filter((s) => s.type !== "airfield_ifr").every((s) => !origins.includes(s.id) && !dests.includes(s.id)));
+check("every hospital has a short label (≤ 5 chars) for the map", f.DATA.sites.filter((x) => x.type === "hospital").every((x) => x.short && x.short.length <= 5));
 check("all sites have numeric lat/lon", f.DATA.sites.every((s) => Number.isFinite(s.lat) && Number.isFinite(s.lon)));
 check("all five scenarios present with defaults", f.SCENARIO_ORDER.every((k) => f.defaultApproaches(k) >= 1) && f.defaultApproaches("D") === 3);
 

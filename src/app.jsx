@@ -5,6 +5,7 @@ import {
   AC,
   SCENARIO_ORDER,
   SCENARIO_TEXT,
+  SCENARIO_HINT,
   computeFuel,
   defaultApproaches,
   originSites,
@@ -79,7 +80,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v3";
+const APP_VERSION = "v4";
 const BUILD_DATE = typeof window !== "undefined" && window.__BUILD_DATE__ ? window.__BUILD_DATE__ : "";
 const NUM_ROWS = 7; // one SRP page has seven sectors
 // >4600 kg is NOT an exceedance — the AW169 all-up mass is 4800 kg.
@@ -1822,17 +1823,20 @@ function IfrMap({ sel, needAlts, onTap, note }) {
   const sites = FUEL_DATA.sites.map((st) => ({ st, ...project(st.lat, st.lon) }));
   const get = (id) => sites.find((x) => x.st.id === id);
 
-  // label priority: selected roles (always shown), then other airfields / refuel points
-  const labelled = sites
-    .filter((x) => x.st.type !== "hospital")
-    .sort((a, b) => (roleOf(b.st.id) ? 1 : 0) - (roleOf(a.st.id) ? 1 : 0))
-    .map((x) => ({ id: x.st.id, x: x.x, y: x.y, text: x.st.icao, must: !!roleOf(x.st.id) }));
-  const labels = placeLabels(
-    labelled,
-    6.5,
-    4.5,
-    sites.filter((x) => x.st.type === "hospital").map((x) => ({ x: x.x, y: x.y }))
-  );
+  // Label priority: selected roles, IFR airfields, refuel points, then hospitals (short names).
+  // Every site is labelled; the placer nudges labels clear of each other and of the markers.
+  const rank = (x) => (roleOf(x.st.id) ? 0 : x.st.type === "airfield_ifr" ? 1 : x.st.type === "refuel_vfr" ? 2 : 3);
+  const labelled = [...sites]
+    .sort((a, b) => rank(a) - rank(b))
+    .map((x) => ({
+      id: x.st.id,
+      x: x.x,
+      y: x.y,
+      text: x.st.type === "hospital" ? x.st.short : x.st.icao,
+      fs: x.st.type === "hospital" ? 5.3 : 6.5,
+      must: true,
+    }));
+  const labels = placeLabels(labelled);
 
   const lines = [];
   const seg = (a, b, color, dash) => {
@@ -1840,8 +1844,9 @@ function IfrMap({ sel, needAlts, onTap, note }) {
     if (A && B) lines.push({ key: `${a}-${b}`, x1: A.x, y1: A.y, x2: B.x, y2: B.y, color, dash });
   };
   seg(sel.origin, sel.dest, C.cyan);
+  // alternates are planned in sequence: destination → alternate 1 → alternate 2
   if (needAlts >= 1) seg(sel.dest, sel.alt1, C.amber, "3 2");
-  if (needAlts === 2) seg(sel.dest, sel.alt2, C.amber, "3 2");
+  if (needAlts === 2) seg(sel.alt1, sel.alt2, C.amber, "3 2");
 
   const legend = (sym, color, text) => (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginRight: 10 }}>
@@ -1909,18 +1914,21 @@ function IfrMap({ sel, needAlts, onTap, note }) {
         <g pointerEvents="none">
           {Object.entries(labels).map(([id, p]) => {
             const role = roleOf(id);
+            const st = get(id).st;
             return (
               <text
                 key={id}
+                data-label={id}
                 x={p.x}
                 y={p.y}
                 textAnchor={p.anchor}
-                fontSize="6.5"
+                fontSize={p.fs}
                 fontWeight={role ? 700 : 500}
                 fontFamily={mono}
                 fill={role || C.grey}
+                opacity={st.type === "hospital" && !role ? 0.9 : 1}
               >
-                {get(id).st.icao}
+                {st.type === "hospital" ? st.short : st.icao}
               </text>
             );
           })}
@@ -1934,7 +1942,7 @@ function IfrMap({ sel, needAlts, onTap, note }) {
             legend("●", C.amber, "ALTN"),
             legend("○", C.cyan, "AIRFIELD"),
             legend("◇", C.amber, "REFUEL"),
-            legend("Ⓗ", C.grey, "HOSPITAL"),
+            legend("Ⓗ", C.grey, "HOSPITAL (TAP FOR NAME)"),
           ].map((el, i) => <span key={i}>{el}</span>)}
       </div>
     </div>
@@ -2054,6 +2062,7 @@ function IfrFuel() {
       <span style={{ ...cell, color: C.grey }}>{ln.serial}</span>
       <div style={cell}>
         <div>{ln.label}</div>
+        {ln.sub && <div style={{ color: C.grey, fontWeight: 500, fontSize: 10, lineHeight: 1.4, marginTop: 2 }}>{ln.sub}</div>}
         {ln.key === "approaches" && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 5 }}>
             <button aria-label="fewer approaches" onClick={() => stepApproaches(-1)} style={stepBtn}>
@@ -2099,8 +2108,21 @@ function IfrFuel() {
         {siteSelect("ORIGIN", origin, pickOrigin, originSites())}
         {siteSelect("DESTINATION", dest, pickDest, dests, r.tripNm !== null ? `${r.tripNm} NM` : "")}
         {needAlts >= 1 &&
-          siteSelect(needAlts === 2 ? "ALTERNATE 1" : "ALTERNATE", alt1, setAlt1, alts1, needAlts === 1 && r.altnNm !== null ? `${r.altnNm} NM` : "")}
-        {needAlts === 2 && siteSelect("ALTERNATE 2", alt2, setAlt2, alts2, r.altnNm !== null ? `FARTHER ${r.altnNm} NM` : "")}
+          siteSelect(
+            needAlts === 2 ? "ALTERNATE 1" : "ALTERNATE",
+            alt1,
+            setAlt1,
+            alts1,
+            r.altLegs.length >= 1 ? `${r.altLegs[0]} NM` : ""
+          )}
+        {needAlts === 2 &&
+          siteSelect(
+            "ALTERNATE 2",
+            alt2,
+            setAlt2,
+            alts2,
+            r.altLegs.length === 2 ? `${r.altLegs[1]} NM FROM ${siteById(alt1).icao}` : ""
+          )}
       </div>
 
       <span style={{ ...label(), fontSize: 10, marginBottom: 4 }}>SCENARIO</span>
@@ -2108,22 +2130,32 @@ function IfrFuel() {
         {SCENARIO_ORDER.map((id) => (
           <button
             key={id}
+            data-scenario={id}
             onClick={() => pickScenario(id)}
             aria-pressed={scenario === id}
+            aria-label={`Scenario ${id}: ${SCENARIO_HINT[id].join(", ")}`}
             style={{
               flex: 1,
+              minWidth: 0,
               background: scenario === id ? C.inputBg : "transparent",
               border: `1px solid ${scenario === id ? C.cyan : C.edge}`,
               borderRadius: 6,
               color: scenario === id ? C.cyan : C.grey,
               fontFamily: mono,
-              fontSize: 13,
-              fontWeight: 600,
-              padding: "9px 0",
+              padding: "7px 0 6px",
               cursor: "pointer",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 1,
             }}
           >
-            {id}
+            <span style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2 }}>{id}</span>
+            {SCENARIO_HINT[id].map((h) => (
+              <span key={h} style={{ fontSize: 8, fontWeight: 600, letterSpacing: "0.02em", lineHeight: 1.25, opacity: scenario === id ? 1 : 0.75 }}>
+                {h}
+              </span>
+            ))}
           </button>
         ))}
       </div>
