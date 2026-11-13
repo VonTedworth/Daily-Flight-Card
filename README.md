@@ -155,7 +155,7 @@ LEG(nm) = round( nm ÷ 130 kt × 280 kg/hr )
 | PinS / 2-APP (15 MIN) | **Scenario A only:** round(15 ÷ 60 × 280) = 70 |
 | DISCRETIONARY | editable, default 0 |
 
-`REQUIRED = Σ`, `MARGIN = FUEL ON BOARD − REQUIRED`. **ENOUGH +n** (green) when margin ≥ 0, **SHORT −n** (amber) when negative. Changing scenario resets the approach count to that scenario's default.
+`REQUIRED = Σ`, `MARGIN = FUEL ON BOARD − REQUIRED`. **ENOUGH +n** (green) when margin ≥ 0, **SHORT −n** (amber) when negative. Changing scenario resets the approach count to that scenario's default, and **clears any alternates the new scenario doesn't use** (D → B/C drops alternate 2; anything → A/VMC drops both) so nothing stale stays selected or coloured on the map. Origin and destination are never touched. Going back up (e.g. B → D) leaves the new alternate empty to be chosen again.
 
 | Scenario | Alternate line | Approaches (default) | Notes |
 |---|---|---|---|

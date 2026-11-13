@@ -81,7 +81,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v5";
+const APP_VERSION = "v6";
 const BUILD_DATE = typeof window !== "undefined" && window.__BUILD_DATE__ ? window.__BUILD_DATE__ : "";
 const NUM_ROWS = 7; // one SRP page has seven sectors
 // >4600 kg is NOT an exceedance — the AW169 all-up mass is 4800 kg.
@@ -1820,7 +1820,13 @@ const signed = (n) => `${n > 0 ? "+" : ""}${n}`;
 // display-only (tap for a caption). No runtime fetch: geometry is bundled.
 function IfrMap({ sel, needAlts, onTap, note }) {
   const roleOf = (id) =>
-    id === sel.origin ? C.green : id === sel.dest ? C.cyan : id === sel.alt1 || id === sel.alt2 ? C.amber : null;
+    id === sel.origin
+      ? C.green
+      : id === sel.dest
+      ? C.cyan
+      : (needAlts >= 1 && id === sel.alt1) || (needAlts === 2 && id === sel.alt2)
+      ? C.amber
+      : null;
   const sites = FUEL_DATA.sites.map((st) => ({ st, ...project(st.lat, st.lon) }));
   const get = (id) => sites.find((x) => x.st.id === id);
 
@@ -2001,6 +2007,12 @@ function IfrFuel() {
   const pickScenario = (id) => {
     setScenario(id);
     setApps(null);
+    // Reset alternates the new scenario doesn't use, so nothing stale stays selected or
+    // coloured: D → B/C drops alternate 2; B/C/D → A/VMC drops both.
+    const keep = id === "D" ? 2 : id === "B" || id === "C" ? 1 : 0;
+    if (keep < 2) setAlt2("");
+    if (keep < 1) setAlt1("");
+    setMapNote("");
   };
 
   const selectStyle = {
