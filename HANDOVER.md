@@ -18,6 +18,11 @@ crew relies on.
   and its bundled data (OMA 8H / OMB B34 figures). Unit-tested directly via
   `build/fuelcalc.cjs` (emitted by `npm run build`; domtest15). Edit figures in the
   JSON, not in code.
+- `src/map-geometry.json` + `tools/gen_map.py` — the IFR FUEL map's county outlines, generated
+  from ONS boundaries (OGL; keep the attribution in README §3A). Regenerate only if the site
+  bounds change: fetch the ONS counties GeoJSON (Dec 2024 UK BGC, WGS84, envelope
+  -1.75,50.45,1.75,51.85) and run `python3 -I tools/gen_map.py counties.geojson`. The raw file is
+  not committed. Sites and outlines must share the projection in that script (domtest17 checks).
 - `build/` — esbuild output (generated)
 
 ## Commands

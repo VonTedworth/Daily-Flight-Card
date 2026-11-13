@@ -9,6 +9,12 @@ import {
   defaultApproaches,
   originSites,
   destSites,
+  DATA as FUEL_DATA,
+  MAP,
+  project,
+  tapSite,
+  placeLabels,
+  siteById,
 } from "./fuelcalc.js";
 
 // ═══════════════════════════════════════════════════════════
@@ -73,7 +79,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v2";
+const APP_VERSION = "v3";
 const BUILD_DATE = typeof window !== "undefined" && window.__BUILD_DATE__ ? window.__BUILD_DATE__ : "";
 const NUM_ROWS = 7; // one SRP page has seven sectors
 // >4600 kg is NOT an exceedance — the AW169 all-up mass is 4800 kg.
@@ -1805,6 +1811,136 @@ function FlightCard({
 
 const signed = (n) => `${n > 0 ? "+" : ""}${n}`;
 
+// Wireframe map: ONS county outlines + every dataset site, plotted in the same
+// projection (src/map-geometry.json is generated for exactly that). Works as a
+// selector — tapping an airfield takes the next unset role (origin → destination →
+// alternate); tapping a selected one clears it. Refuel points and hospitals are
+// display-only (tap for a caption). No runtime fetch: geometry is bundled.
+function IfrMap({ sel, needAlts, onTap, note }) {
+  const roleOf = (id) =>
+    id === sel.origin ? C.green : id === sel.dest ? C.cyan : id === sel.alt1 || id === sel.alt2 ? C.amber : null;
+  const sites = FUEL_DATA.sites.map((st) => ({ st, ...project(st.lat, st.lon) }));
+  const get = (id) => sites.find((x) => x.st.id === id);
+
+  // label priority: selected roles (always shown), then other airfields / refuel points
+  const labelled = sites
+    .filter((x) => x.st.type !== "hospital")
+    .sort((a, b) => (roleOf(b.st.id) ? 1 : 0) - (roleOf(a.st.id) ? 1 : 0))
+    .map((x) => ({ id: x.st.id, x: x.x, y: x.y, text: x.st.icao, must: !!roleOf(x.st.id) }));
+  const labels = placeLabels(
+    labelled,
+    6.5,
+    4.5,
+    sites.filter((x) => x.st.type === "hospital").map((x) => ({ x: x.x, y: x.y }))
+  );
+
+  const lines = [];
+  const seg = (a, b, color, dash) => {
+    const A = a && get(a), B = b && get(b);
+    if (A && B) lines.push({ key: `${a}-${b}`, x1: A.x, y1: A.y, x2: B.x, y2: B.y, color, dash });
+  };
+  seg(sel.origin, sel.dest, C.cyan);
+  if (needAlts >= 1) seg(sel.dest, sel.alt1, C.amber, "3 2");
+  if (needAlts === 2) seg(sel.dest, sel.alt2, C.amber, "3 2");
+
+  const legend = (sym, color, text) => (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginRight: 10 }}>
+      <span style={{ color }}>{sym}</span>
+      {text}
+    </span>
+  );
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <svg
+        viewBox={`0 0 ${MAP.meta.w} ${MAP.meta.h}`}
+        role="img"
+        aria-label="Map of south-east England airfields"
+        style={{
+          display: "block",
+          width: "100%",
+          height: "auto",
+          background: C.inputBg,
+          border: `1px solid ${C.edge}`,
+          borderRadius: 8,
+        }}
+      >
+        <g pointerEvents="none">
+          {MAP.counties.map((c) => (
+            <path key={c.n} d={c.d} fill={C.edge} stroke={C.inputBg} strokeWidth="0.5" strokeLinejoin="round" />
+          ))}
+          {lines.map((l) => (
+            <line key={l.key} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={l.color} strokeWidth="1.2" strokeDasharray={l.dash} />
+          ))}
+        </g>
+        {sites.map(({ st, x, y }) => {
+          const role = roleOf(st.id);
+          const airfield = st.type === "airfield_ifr";
+          return (
+            <g
+              key={st.id}
+              data-site={st.id}
+              role="button"
+              aria-label={`${st.icao || st.name}${role ? " selected" : ""}`}
+              onClick={() => onTap(st.id)}
+              style={{ cursor: "pointer" }}
+            >
+              <circle cx={x} cy={y} r="7" fill="transparent" />
+              {airfield ? (
+                <circle cx={x} cy={y} r="3.2" fill={role || "none"} stroke={role || C.cyan} strokeWidth="1.1" />
+              ) : st.type === "refuel_vfr" ? (
+                <polygon
+                  points={`${x},${y - 3.6} ${x + 3.6},${y} ${x},${y + 3.6} ${x - 3.6},${y}`}
+                  fill="none"
+                  stroke={C.amber}
+                  strokeWidth="1.1"
+                />
+              ) : (
+                <>
+                  <circle cx={x} cy={y} r="3.3" fill="none" stroke={C.grey} strokeWidth="0.9" />
+                  <text x={x} y={y + 1.7} textAnchor="middle" fontSize="4.6" fontWeight="700" fontFamily={mono} fill={C.grey}>
+                    H
+                  </text>
+                </>
+              )}
+            </g>
+          );
+        })}
+        <g pointerEvents="none">
+          {Object.entries(labels).map(([id, p]) => {
+            const role = roleOf(id);
+            return (
+              <text
+                key={id}
+                x={p.x}
+                y={p.y}
+                textAnchor={p.anchor}
+                fontSize="6.5"
+                fontWeight={role ? 700 : 500}
+                fontFamily={mono}
+                fill={role || C.grey}
+              >
+                {get(id).st.icao}
+              </text>
+            );
+          })}
+        </g>
+      </svg>
+      <div style={{ color: note ? C.amber : C.grey, fontFamily: mono, fontSize: 10, lineHeight: 1.6, marginTop: 6, minHeight: 16 }}>
+        {note ||
+          [
+            legend("●", C.green, "ORIGIN"),
+            legend("●", C.cyan, "DEST"),
+            legend("●", C.amber, "ALTN"),
+            legend("○", C.cyan, "AIRFIELD"),
+            legend("◇", C.amber, "REFUEL"),
+            legend("Ⓗ", C.grey, "HOSPITAL"),
+          ].map((el, i) => <span key={i}>{el}</span>)}
+      </div>
+    </div>
+  );
+}
+
 function IfrFuel() {
   const [origin, setOrigin] = useState("");
   const [dest, setDest] = useState("");
@@ -1815,6 +1951,7 @@ function IfrFuel() {
   const [startTaxi, setStartTaxi] = useState(String(AC.start_taxi_default_kg));
   const [apps, setApps] = useState(null); // null = scenario default
   const [disc, setDisc] = useState("");
+  const [mapNote, setMapNote] = useState("");
 
   const needAlts = scenario === "D" ? 2 : scenario === "B" || scenario === "C" ? 1 : 0;
   const approaches = apps === null ? defaultApproaches(scenario) : apps;
@@ -1831,13 +1968,23 @@ function IfrFuel() {
   });
 
   const pickOrigin = (id) => {
+    setMapNote("");
     setOrigin(id);
     if (dest === id) setDest("");
   };
   const pickDest = (id) => {
+    setMapNote("");
     setDest(id);
     if (alt1 === id) setAlt1("");
     if (alt2 === id) setAlt2("");
+  };
+  const tapMap = (id) => {
+    const res = tapSite({ origin, dest, alt1, alt2 }, id, needAlts);
+    setOrigin(res.sel.origin);
+    setDest(res.sel.dest);
+    setAlt1(res.sel.alt1);
+    setAlt2(res.sel.alt2);
+    setMapNote(res.note);
   };
   // Functional update so rapid taps always register (no stale render-time count).
   const stepApproaches = (delta) =>
@@ -1945,6 +2092,8 @@ function IfrFuel() {
   return (
     <>
       <PanelHeader title="IFR FUEL" subtitle="AW169 CROSS-CHECK" />
+
+      <IfrMap sel={{ origin, dest, alt1, alt2 }} needAlts={needAlts} onTap={tapMap} note={mapNote} />
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
         {siteSelect("ORIGIN", origin, pickOrigin, originSites())}
