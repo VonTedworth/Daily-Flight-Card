@@ -6,6 +6,7 @@ import {
   SCENARIO_ORDER,
   SCENARIO_TEXT,
   SCENARIO_HINT,
+  approachSummary,
   computeFuel,
   defaultApproaches,
   originSites,
@@ -80,7 +81,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v4";
+const APP_VERSION = "v5";
 const BUILD_DATE = typeof window !== "undefined" && window.__BUILD_DATE__ ? window.__BUILD_DATE__ : "";
 const NUM_ROWS = 7; // one SRP page has seven sectors
 // >4600 kg is NOT an exceedance — the AW169 all-up mass is 4800 kg.
@@ -2011,7 +2012,7 @@ function IfrFuel() {
     WebkitAppearance: "none",
     cursor: "pointer",
   };
-  const siteSelect = (lab, value, onChange, sites, right) => (
+  const siteSelect = (lab, value, onChange, sites, right, info = false) => (
     <label key={lab} style={{ display: "block" }}>
       <span style={{ ...label(), display: "flex", justifyContent: "space-between", fontSize: 10, marginBottom: 4 }}>
         <span>{lab}</span>
@@ -2025,6 +2026,15 @@ function IfrFuel() {
           </option>
         ))}
       </select>
+      {info && value && approachSummary(value).length > 0 && (
+        <div
+          data-approaches={value}
+          style={{ marginTop: 5, fontFamily: mono, fontSize: 10.5, lineHeight: 1.5, color: C.white }}
+        >
+          <span style={{ color: C.grey, letterSpacing: "0.1em", marginRight: 6 }}>APPROACHES</span>
+          {approachSummary(value).join(" · ")}
+        </div>
+      )}
     </label>
   );
 
@@ -2106,14 +2116,15 @@ function IfrFuel() {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
         {siteSelect("ORIGIN", origin, pickOrigin, originSites())}
-        {siteSelect("DESTINATION", dest, pickDest, dests, r.tripNm !== null ? `${r.tripNm} NM` : "")}
+        {siteSelect("DESTINATION", dest, pickDest, dests, r.tripNm !== null ? `${r.tripNm} NM` : "", true)}
         {needAlts >= 1 &&
           siteSelect(
             needAlts === 2 ? "ALTERNATE 1" : "ALTERNATE",
             alt1,
             setAlt1,
             alts1,
-            r.altLegs.length >= 1 ? `${r.altLegs[0]} NM` : ""
+            r.altLegs.length >= 1 ? `${r.altLegs[0]} NM` : "",
+            true
           )}
         {needAlts === 2 &&
           siteSelect(
@@ -2121,7 +2132,8 @@ function IfrFuel() {
             alt2,
             setAlt2,
             alts2,
-            r.altLegs.length === 2 ? `${r.altLegs[1]} NM FROM ${siteById(alt1).icao}` : ""
+            r.altLegs.length === 2 ? `${r.altLegs[1]} NM FROM ${siteById(alt1).icao}` : "",
+            true
           )}
       </div>
 

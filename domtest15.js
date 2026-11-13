@@ -91,6 +91,23 @@ check("every scenario has a two-line hint", f.SCENARIO_ORDER.every((k) => Array.
 check("hints state the plan type (alternates / approaches)", /NO ALTN/.test(f.SCENARIO_HINT.A[0]) && /2 APPS/.test(f.SCENARIO_HINT.A[1]) && /1 ALTN/.test(f.SCENARIO_HINT.B[0]) && /2 ALTN/.test(f.SCENARIO_HINT.D[0]));
 check("D descriptor describes the sequence", /alternate 1 → alternate 2/.test(f.SCENARIO_TEXT.D));
 
+// ── Approaches: info line text + where the 70 kg per approach is allocated ──
+const ap = (id) => f.approachSummary(id).join(" · ");
+check("approach list: Biggin Hill ILS 21 · RNP 21 · RNP 03 (RF, new 2026)", ap("EGKB") === "ILS 21 · RNP 21 · RNP 03 (RF, NEW 2026)");
+check("approach list: Shoreham is RNP only (no ILS, no NDB)", ap("EGKA") === "RNP 02/20");
+check("approach list: Lydd ILS · RNP · NDB", ap("EGMD") === "ILS 21 · RNP 21 · NDB 03");
+check("approach list: Heathrow runways 'all' reads ALL RWYS", ap("EGLL") === "ILS ALL RWYS · RNP ALL RWYS");
+check("approach list: London City carries its steep-approach note", /ILS 09\/27 \(5\.5° STEEP — AW169 APPROVED\)/.test(ap("EGLC")));
+check("approach list: Redhill / hospitals / unknown ids list nothing", ap("EGKR") === "" && ap("H_KCH") === "" && ap("NOPE") === "");
+check("approach list length matches the dataset for every selectable field", f.destSites().every((x) => f.approachSummary(x.id).length === x.approaches.length));
+const appD = line(f.computeFuel(dEx), "approaches");
+check("D: 3 approaches = one 70 kg allowance at EACH airfield (210 kg)", appD.kg === 210 && appD.sub === "EGMD 1 · EGKB 1 · EGKK 1");
+check("A: two approaches at the destination", line(f.computeFuel({ ...base, scenario: "A", alts: [] }), "approaches").sub === "EGKA 2");
+check("VMC: one approach at the destination", line(f.computeFuel({ ...base, scenario: "VMC", alts: [] }), "approaches").sub === "EGKA 1");
+check("B before an alternate is chosen: destination + placeholder", line(f.computeFuel({ ...base, alts: [] }), "approaches").sub === "EGKA 1 · ALTN 1");
+check("B with alternate chosen: names both fields (2 × 70 = 140)", line(b, "approaches").sub === "EGKA 1 · EGKK 1" && line(b, "approaches").kg === 140);
+check("stepper change is flagged as adjusted from the default", line(f.computeFuel({ ...dEx, approaches: 4 }), "approaches").sub === "ADJUSTED · DEFAULT 3");
+
 // ── Dataset integrity ──
 const ifr = f.DATA.sites.filter((s) => s.type === "airfield_ifr");
 const dests = f.destSites().map((s) => s.id);

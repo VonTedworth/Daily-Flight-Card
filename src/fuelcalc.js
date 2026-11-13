@@ -27,6 +27,22 @@ export const SCENARIO_HINT = {
   D: ["2 ALTN", "CHAIN"],
 };
 
+// Published approaches at a field, for the information line under each selected airfield.
+// (Types/runways from the bundled dataset — verify against the current eAIP / company plate.)
+const APP_LABEL = {
+  ILS: "ILS", LPV: "LPV", PAR: "PAR", RNP_LNAV: "RNP", RNP_LNAV_VNAV: "RNP VNAV", PinS: "PinS",
+  LOC: "LOC", VOR_DME: "VOR/DME", VOR: "VOR", NDB_DME: "NDB/DME", NDB: "NDB",
+  SRA_half_nm: "SRA", SRA_1_nm: "SRA", SRA_2_nm: "SRA",
+};
+export function approachSummary(id) {
+  const st = DATA.sites.find((x) => x.id === id);
+  if (!st || !st.approaches) return [];
+  return st.approaches.map((a) => {
+    const rwy = String(a.rwy).toLowerCase() === "all" ? "ALL RWYS" : String(a.rwy).toUpperCase();
+    return `${APP_LABEL[a.type] || a.type.replace(/_/g, " ")} ${rwy}${a.note ? ` (${a.note.toUpperCase()})` : ""}`;
+  });
+}
+
 const NM_M = 1852;
 const EARTH_R_M = 6371008.8;
 const rad = (d) => (d * Math.PI) / 180;
@@ -117,7 +133,18 @@ export function computeFuel(p) {
   if (sc.alt_fuel) add("alternate", altLabel, altKg, altSub ? { sub: altSub } : {});
   add("contingency", "CONTINGENCY 10%", contingency);
   add("finalReserve", "FINAL RESERVE", AC.final_reserve_ifr_kg);
-  add("approaches", "IFR APPROACHES", approachCount * AC.per_ifr_approach_kg, { count: approachCount });
+  // Where the 70 kg approaches go: one per airfield (destination + each alternate); scenario A
+  // plans two independent approaches at the destination.
+  let appSub;
+  if (approachCount !== sc.approaches_default) {
+    appSub = `ADJUSTED · DEFAULT ${sc.approaches_default}`;
+  } else if (p.scenario === "A") {
+    appSub = `${dest.icao} 2`;
+  } else {
+    const altNames = Array.from({ length: need }, (_, i) => (siteById((p.alts || [])[i]) || {}).icao || "ALTN");
+    appSub = [dest.icao, ...altNames].map((n) => `${n} 1`).join(" · ");
+  }
+  add("approaches", "IFR APPROACHES", approachCount * AC.per_ifr_approach_kg, { count: approachCount, sub: appSub });
   if (p.scenario === "A") add("pins", "PinS / 2-APP (15 MIN)", PIN_S_KG);
   add("discretionary", "DISCRETIONARY", discretionary);
   lines.forEach((ln, i) => (ln.serial = i + 1));
