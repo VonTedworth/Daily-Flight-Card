@@ -30,7 +30,7 @@ check("every site projects inside the viewBox", f.DATA.sites.every((s) => { cons
 // (Southend Airport is in Rochford District, Essex — just outside the Southend-on-Sea UA. Rochester
 // is omitted: it sits within ~200 m of the Medway/Kent line, inside the map's simplification tolerance.)
 const expect = { EGKR: "Surrey", EGKK: "West Sussex", EGKB: "Bromley", EGKA: "West Sussex", EGMD: "Kent",
-  EGMC: "Essex", EGLL: "Hillingdon", EGLC: "Newham", EGHI: "Hampshire", EGMH: "Kent" };
+  EGMC: "Essex", EGLL: "Hillingdon", EGLC: "Newham", EGHI: "Hampshire", EGMH: "Kent", EGSS: "Essex" };
 for (const [id, county] of Object.entries(expect)) check(`alignment: ${id} plots inside ${county} (got ${countyOf(id)})`, countyOf(id) === county);
 const hexpect = { H_RSCH: "Brighton and Hove", H_MAID: "Kent", H_STM: "Isle of Wight", H_FPH: "Surrey", H_SGEN: "Southampton", H_QA: "Portsmouth",
   H_EDGH: "East Sussex", H_CONQ: "East Sussex", H_MMH: "Medway", H_DVH: "Kent", H_BROOM: "Essex" };

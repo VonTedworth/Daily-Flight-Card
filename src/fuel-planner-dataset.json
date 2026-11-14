@@ -62,6 +62,7 @@
     { "id": "EGHI", "icao": "EGHI", "name": "Southampton",    "type": "airfield_ifr", "lat": 50.9503, "lon": -1.3568, "fuel": true, "approaches": [ {"type":"ILS","rwy":"20","dh_floor_ft":200}, {"type":"RNP_LNAV","rwy":"20/02","dh_floor_ft":250} ] },
     { "id": "EGLL", "icao": "EGLL", "name": "Heathrow",       "type": "airfield_ifr", "lat": 51.4706, "lon": -0.4619, "fuel": true, "approaches": [ {"type":"ILS","rwy":"all","dh_floor_ft":200}, {"type":"RNP_LNAV","rwy":"all","dh_floor_ft":250} ] },
     { "id": "EGLC", "icao": "EGLC", "name": "London City",    "type": "airfield_ifr", "lat": 51.5053, "lon": 0.0553,  "fuel": true, "approaches": [ {"type":"ILS","rwy":"09/27","dh_floor_ft":200,"note":"5.5° steep — AW169 approved"}, {"type":"RNP_LNAV","rwy":"09/27","dh_floor_ft":250,"note":"RNP AR"} ] },
+    { "id": "EGSS", "icao": "EGSS", "name": "Stansted",       "type": "airfield_ifr", "lat": 51.8850, "lon": 0.2350,  "fuel": true, "approaches": [ {"type":"ILS","rwy":"04","dh_floor_ft":200}, {"type":"ILS","rwy":"22","dh_floor_ft":200}, {"type":"RNP_LNAV","rwy":"04/22","dh_floor_ft":250} ] },
 
     { "id": "EGMH", "icao": "EGMH", "name": "Manston",        "type": "refuel_vfr", "lat": 51.3422, "lon": 1.3461, "fuel": true },
     { "id": "EGTO", "icao": "EGTO", "name": "Rochester",      "type": "refuel_vfr", "lat": 51.3517, "lon": 0.5033, "fuel": true },

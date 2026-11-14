@@ -18,10 +18,13 @@ crew relies on.
   and its bundled data (OMA 8H / OMB B34 figures). Unit-tested directly via
   `build/fuelcalc.cjs` (emitted by `npm run build`; domtest15). Edit figures in the
   JSON, not in code.
+- `approach-minima-reference.md` — planning reference (OMA 8H minima by approach type, per-airfield
+  approaches, how approach choice feeds the scenarios). Documentation only: the approaches the app
+  shows come from the dataset — keep the two in step when adding a field.
 - `src/map-geometry.json` + `tools/gen_map.py` — the IFR FUEL map's county outlines, generated
   from ONS boundaries (OGL; keep the attribution in README §3A). Regenerate only if the site
   bounds change: fetch the ONS counties GeoJSON (Dec 2024 UK BGC, WGS84, envelope
-  -1.75,50.45,1.75,51.95) and run `python3 -I tools/gen_map.py counties.geojson`. The raw file is
+  -1.75,50.45,1.75,52.05) and run `python3 -I tools/gen_map.py counties.geojson`. The raw file is
   not committed. Sites and outlines must share the projection in that script (domtest17 checks).
 - `src/service-worker.src.js` — the service worker TEMPLATE. `build_html.py` stamps it and
   writes `service-worker.js` (repo root) — never edit the built copy. `build_html.py` also

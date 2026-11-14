@@ -118,6 +118,12 @@ check("every airfield_ifr is selectable as origin", ifr.every((s) => origins.inc
 check("refuel points and hospitals are display-only (not selectable)",
   f.DATA.sites.filter((s) => s.type !== "airfield_ifr").every((s) => !origins.includes(s.id) && !dests.includes(s.id)));
 check("every hospital has a short label (≤ 5 chars) for the map", f.DATA.sites.filter((x) => x.type === "hospital").every((x) => x.short && x.short.length <= 5));
+const ss = f.siteById("EGSS");
+check("Stansted (EGSS) present as an IFR airfield at the published ARP 51.8850 N 0.2350 E", ss && ss.type === "airfield_ifr" && ss.lat === 51.885 && ss.lon === 0.235);
+check("Stansted selectable as ORIGIN", f.originSites().some((x) => x.id === "EGSS"));
+check("Stansted selectable as DESTINATION and ALTERNATE (has approaches)", f.destSites().some((x) => x.id === "EGSS"));
+check("Stansted approaches listed: ILS 04 · ILS 22 · RNP 04/22", f.approachSummary("EGSS").join(" · ") === "ILS 04 · ILS 22 · RNP 04/22");
+check("Stansted plans like any field (e.g. Redhill → Stansted, altn Southend, B)", (() => { const r = f.computeFuel({ origin: "EGKR", dest: "EGSS", alts: ["EGMC"], scenario: "B", fob: 600 }); return r.incomplete === null && r.tripNm > 40 && r.required > 0; })());
 check("all sites have numeric lat/lon", f.DATA.sites.every((s) => Number.isFinite(s.lat) && Number.isFinite(s.lon)));
 check("all five scenarios present with defaults", f.SCENARIO_ORDER.every((k) => f.defaultApproaches(k) >= 1) && f.defaultApproaches("D") === 3);
 
