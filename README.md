@@ -206,6 +206,9 @@ The completed card is archived under PREVIOUS CARDS with its original SRP.
 
 - Everything lives in `localStorage` on that phone: current card, previous 4 cards, last reg, theme. Each device independent; nothing transmitted. GPS used only when a HEMS box is ticked.
 - localStorage is not indestructible — clearing Safari website data wipes cards. The emailed PDF is the durable record.
+- **Launches with no signal.** A service worker keeps a copy of the app on the phone. Open it once with signal (and add it to the Home Screen); after that it launches with no connection at all. On weak signal it tries the network for about 3 seconds, then opens the saved copy rather than hanging. With good signal it loads the latest version and refreshes the saved copy.
+- **Updates never interrupt you.** A new version downloads quietly in the background; the page you have open is never reloaded or swapped mid-session. The next time you open the app it is the new version (check the `vN · date` stamp).
+- **Honest limit:** this is as reliable as the web allows, not as bulletproof as a native app. iOS can still clear a web app's saved data after long periods of non-use or when the phone is very short of storage; the app then needs one launch with signal to save itself again (and any cards on the phone would be lost with it — the emailed PDFs are the record). For a tool used regularly this is rare; only a native App Store build removes it entirely.
 - ☀/☾ (top right): night (dark MFD) / day (high-contrast sunlight) theme, per device.
 - Safe-area padding keeps content clear of the iPhone status bar and home indicator; layout auto-scales on iPads.
 - A small `vN · dd.mm.yyyy` version/build-date stamp sits below the card on every tab, so you can confirm which build is live after a deploy.
