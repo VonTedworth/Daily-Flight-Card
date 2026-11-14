@@ -32,7 +32,8 @@ check("every site projects inside the viewBox", f.DATA.sites.every((s) => { cons
 const expect = { EGKR: "Surrey", EGKK: "West Sussex", EGKB: "Bromley", EGKA: "West Sussex", EGMD: "Kent",
   EGMC: "Essex", EGLL: "Hillingdon", EGLC: "Newham", EGHI: "Hampshire", EGMH: "Kent" };
 for (const [id, county] of Object.entries(expect)) check(`alignment: ${id} plots inside ${county} (got ${countyOf(id)})`, countyOf(id) === county);
-const hexpect = { H_RSCH: "Brighton and Hove", H_MAID: "Kent", H_STM: "Isle of Wight", H_FPH: "Surrey", H_SGEN: "Southampton", H_QA: "Portsmouth" };
+const hexpect = { H_RSCH: "Brighton and Hove", H_MAID: "Kent", H_STM: "Isle of Wight", H_FPH: "Surrey", H_SGEN: "Southampton", H_QA: "Portsmouth",
+  H_EDGH: "East Sussex", H_CONQ: "East Sussex", H_MMH: "Medway", H_DVH: "Kent", H_BROOM: "Essex" };
 for (const [id, county] of Object.entries(hexpect)) check(`hospital sanity: ${id} plots inside ${county} (got ${countyOf(id)})`, countyOf(id) === county);
 
 // ── tap selector rules ──
@@ -60,8 +61,8 @@ check("refuel point: display-only caption", /refuel point \(display only\)/.test
 // ── label placement: every site (airfields, refuel points AND hospitals) is labelled ──
 const all = f.DATA.sites.map((s) => ({ id: s.id, text: s.type === "hospital" ? s.short : s.icao, fs: s.type === "hospital" ? 5.3 : 6.5, must: true, ...f.project(s.lat, s.lon) }));
 const lab = f.placeLabels(all);
-check("every one of the 23 sites gets a label", all.every((i) => lab[i.id]));
-check("all 12 hospitals are labelled with their short name", f.DATA.sites.filter((s) => s.type === "hospital").every((s) => lab[s.id]));
+check(`every one of the ${all.length} sites gets a label`, all.every((i) => lab[i.id]));
+check(`all ${f.DATA.sites.filter((s) => s.type === "hospital").length} hospitals are labelled with their short name`, f.DATA.sites.filter((s) => s.type === "hospital").every((s) => lab[s.id]));
 const boxes = all.map((i) => {
   const p = lab[i.id], w = i.text.length * i.fs * 0.62;
   const x = p.anchor === "start" ? p.x : p.anchor === "end" ? p.x - w : p.x - w / 2;
@@ -101,8 +102,8 @@ const text = () => d.getElementById("root").textContent;
   const svg = d.querySelector('svg[role="img"]');
   check("map renders on the IFR FUEL tab", !!svg && svg.getAttribute("viewBox") === `0 0 ${f.MAP.meta.w} ${f.MAP.meta.h}`);
   check("county outlines drawn from bundled geometry", svg.querySelectorAll("path").length === f.MAP.counties.length);
-  check("all 23 dataset sites plotted as markers", d.querySelectorAll("g[data-site]").length === f.DATA.sites.length);
-  check("hospital short names are drawn on the map (all 12)", f.DATA.sites.filter((x) => x.type === "hospital").every((x) => d.querySelector(`text[data-label="${x.id}"]`)?.textContent === x.short));
+  check(`all ${f.DATA.sites.length} dataset sites plotted as markers`, d.querySelectorAll("g[data-site]").length === f.DATA.sites.length);
+  check("hospital short names are drawn on the map (all of them)", f.DATA.sites.filter((x) => x.type === "hospital").every((x) => d.querySelector(`text[data-label="${x.id}"]`)?.textContent === x.short));
   check("map legend shown", text().includes("ORIGIN") && text().includes("HOSPITAL") && text().includes("REFUEL"));
 
   click(marker("EGKR")); await sleep(80);

@@ -10,7 +10,7 @@ Run   : python3 -I tools/gen_map.py path/to/counties.geojson
 import json, math, sys
 
 LON_MIN, LON_MAX = -1.60, 1.55
-LAT_MIN, LAT_MAX = 50.60, 51.68
+LAT_MIN, LAT_MAX = 50.60, 51.86  # top extended to include Broomfield (Chelmsford, 51.77 N)
 LAT0 = (LAT_MIN + LAT_MAX) / 2
 K = math.cos(math.radians(LAT0))      # longitude correction at mean latitude
 W = 300.0                             # viewBox width; ~1 unit = 1 CSS px on a phone

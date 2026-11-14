@@ -76,7 +76,11 @@
     { "id": "H_QA",    "name": "Queen Alexandra, Portsmouth",   "type": "hospital", "short": "QA", "lat": 50.8530, "lon": -1.0680 },
     { "id": "H_QEQM",  "name": "QEQM, Margate",                 "type": "hospital", "short": "QEQM", "lat": 51.3830, "lon": 1.4050 },
     { "id": "H_FPH",   "name": "Frimley Park",                  "type": "hospital", "short": "FPH", "lat": 51.3070, "lon": -0.7140 },
-    { "id": "H_EDGH",  "name": "Eastbourne DGH",                "type": "hospital", "short": "EDGH", "lat": 50.7870, "lon": 0.2790 },
+    { "id": "H_EDGH",  "name": "Eastbourne DGH",                "type": "hospital", "short": "EDGH", "lat": 50.7865, "lon": 0.2698 },
+    { "id": "H_CONQ",  "name": "Conquest, Hastings",            "type": "hospital", "short": "HAST", "lat": 50.8854, "lon": 0.5677 },
+    { "id": "H_MMH",   "name": "Medway Maritime, Gillingham",   "type": "hospital", "short": "MMH", "lat": 51.3800, "lon": 0.5419 },
+    { "id": "H_DVH",   "name": "Darent Valley, Dartford",       "type": "hospital", "short": "DVH", "lat": 51.4350, "lon": 0.2584 },
+    { "id": "H_BROOM", "name": "Broomfield, Chelmsford",        "type": "hospital", "short": "BROOM", "lat": 51.7745, "lon": 0.4661 },
     { "id": "H_SGEN",  "name": "Southampton General",           "type": "hospital", "short": "SOTON", "lat": 50.9330, "lon": -1.4350 }
   ]
 }
