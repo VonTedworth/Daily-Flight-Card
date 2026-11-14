@@ -77,7 +77,7 @@ Shown under each row once computable, and on the PDF, as a single non-wrapping l
 
 | Situation | Departure fuel assumed |
 |---|---|
-| Flight 1 of the card | PLANNED FUEL KG |
+| Flight 1 of the card | PLANNED FUEL KG — **except the first sector of a carried-over card** (§4): the previous card's last landed fuel |
 | Previous flight has REFUEL ticked | PLANNED FUEL KG (refuelled back to plan) |
 | Otherwise | Previous flight's FUEL KG (its landed fuel) |
 
@@ -92,11 +92,15 @@ VERT(flight)    = VERT TOW − DEP GW(flight)
 - Flight 1's DEP GW appears as soon as the header is filled (`GW DEP + patient`), so preloading a patient weight on the next row shows the lift margin **before** flight time or landing fuel exist — the intended pre-departure glance when power-limited.
 - Each margin is independently coloured (green ≥ 0 / amber negative) and shown with no `KG` suffix; VERT prints an em-dash if VERT TOW is empty. The `DEP GW` figure itself has no space before `KG` (`4540KG`), grey unless over AUM.
 
+GW DEP is the baseline weight *at planned fuel*, so any departure fuel simply shifts the weight by (departure fuel − planned fuel) — burn lightens the aircraft, a refuel back to plan restores it, and passengers are added for their own sector only. This is the same as working forward from the previous takeoff weight: previous weight − fuel burnt (+ any uplift) − last patient + next patient.
+
+**Known simplifications** (figures can differ from reality by these): the start-up/taxi burn between shutdown and takeoff (roughly 30 kg) is not deducted, so each figure reads slightly heavy; a refuel is assumed to return to exactly the planned load; and PLANNED FUEL is taken as the fuel in GW DEP, so editing it after typing GW DEP shifts every figure by the difference.
+
 **Worked example:** GW DEP 4600, planned 650. Flight 1 lands with 500 kg, no refuel. Flight 2 (HEMS, patient 90): departure fuel 500 → `DEP GW = 4600 + (500 − 650) + 90 = 4540`; VAR TOW 4650 → `VAR = +110`; VERT TOW 4440 → `VERT = −100`. Flight 2 refuels → flight 3 departure fuel 650, `DEP GW = 4600`.
 
 ### 2.3 Weight thresholds
 
-- **4600 kg is NOT a limit** — it is the maintenance-penalty notation threshold. Rows show the plain grey `DEP GW` figure with no annotation (crews know the threshold); the **PDF prints one summary line** — `NOTE ON SRP — GW OVER 4600 KG: FLT 1, FLT 3` — for direct transcription to the SRP.
+- **4600 kg is NOT a limit** — it is the maintenance-penalty notation threshold (strictly *over* 4600; exactly 4600 is not flagged). Rows show the plain grey `DEP GW` figure with no annotation (crews know the threshold); the **PDF prints one summary line** — `NOTE ON SRP — GW OVER 4600 KG: FLT 1, FLT 3` — for direct transcription to the SRP. A **0-minute ground run is never listed**: it has no takeoff, so it is not a flight over 4600 (it still shows its DEP GW on screen and in the PDF row).
 - **`— OVER AUM`** (amber, bold) — the aircraft's all-up mass (4800 kg, not repeated in the wording since the limit is fixed and known); this *is* an exceedance warning. The VAR/VERT margins still print on the same line.
 - VAR / VERT margins: green positive, amber negative. Both TOW figures and the AUM threshold are hard-coded/manual per card.
 
@@ -185,6 +189,7 @@ An SRP page holds seven sectors. When a day overruns, tick **CARRY OVER A/C DATA
 
 - copies AC REG, GW DEP, VAR TOW, VERT TOW, PLANNED FUEL;
 - **increments SRP by one** (the SRP field is digits-only, so this always applies);
+- sets the **first sector's departure fuel to the old card's last landed fuel** (so sector 1 of the new card is GW DEP + (landed − planned), not GW DEP) — or planned fuel if that last sector was refuelled, or if no landed fuel was recorded. Sector 2 onward follow each landing as usual;
 - sets **AVAILABLE = the old card's REMAINING**, so the maintenance countdown continues across SRP pages;
 - starts with blank flights, MISC, and power check (the once-per-SRP/10 hr/24 hr power check requirement is judged by the crew, not re-prompted);
 - **does NOT copy DATE or SUNRISE/SUNSET** — the new card always shows today's date and today's recomputed sun times, even for a same-day overrun (where today already equals the outgoing date, so nothing changes) or a shift that crosses midnight (where copying would silently show yesterday's date and stale sun times).

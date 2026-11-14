@@ -81,7 +81,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v6";
+const APP_VERSION = "v7";
 const BUILD_DATE = typeof window !== "undefined" && window.__BUILD_DATE__ ? window.__BUILD_DATE__ : "";
 const NUM_ROWS = 7; // one SRP page has seven sectors
 // >4600 kg is NOT an exceedance — the AW169 all-up mass is 4800 kg.
@@ -714,7 +714,8 @@ function makeCardPdf(card, rowGW, bst) {
 
   // The line the SRP filler actually needs: which flights crossed 4600.
   const srpFlights = card.rows
-    .map((r, i) => ({ i, w: rowUsedPdf(r) ? rowGW(r, i) : null }))
+    // A 0-minute GROUND RUN has no takeoff, so it is never a "flight over 4600".
+    .map((r, i) => ({ i, w: rowUsedPdf(r) && parseMinutes(r.fltTime) !== 0 ? rowGW(r, i) : null }))
     .filter((x) => x.w !== null && x.w > SRP_NOTE_WT)
     .map((x) => `FLT ${x.i + 1}`);
   if (srpFlights.length) {
@@ -809,6 +810,9 @@ function freshCard() {
     varField: "",
     vertField: "",
     plannedFuel: "",
+    // Fuel on board at the first takeoff when it is NOT the planned figure — set only by a
+    // carry-over (the previous card's last landed fuel). "" = assume PLANNED FUEL.
+    startFuel: "",
     hoursAvail: "",
     sunriseSet: d ? sunTimes(d, REDHILL.lat, REDHILL.lng) : "",
     rows: Array.from({ length: NUM_ROWS }, freshRow),
@@ -1090,6 +1094,15 @@ function FlightCard({
       next.varField = card.varField;
       next.vertField = card.vertField;
       next.plannedFuel = card.plannedFuel;
+      // The aircraft does not magically refill between SRP pages: sector 1 of the new card
+      // departs with what the last flight landed with — unless that sector was refuelled
+      // (then it is back to planned, which is what "" means). GW DEP is the baseline at
+      // planned fuel, so the departure weight is GW DEP + (startFuel − planned).
+      const flown = (r) => Boolean(r.fltTime || r.fuel || r.shtdwn);
+      const lastFlown = [...card.rows].reverse().find(flown);
+      if (lastFlown && !lastFlown.refuel && parseNum(lastFlown.fuel) !== null) {
+        next.startFuel = String(parseNum(lastFlown.fuel));
+      }
       // SRP increments if numeric, else copies verbatim
       next.srp = /^\d+$/.test(card.srp) ? String(parseInt(card.srp, 10) + 1) : card.srp;
       // Maintenance countdown continues: new AVAILABLE = old REMAINING
@@ -1109,7 +1122,10 @@ function FlightCard({
   //   otherwise           → previous flight's landed fuel
   const depFuel = (i) => {
     const planned = parseNum(card.plannedFuel);
-    if (i === 0) return planned;
+    if (i === 0) {
+      const start = parseNum(card.startFuel); // carried-over card: previous landed fuel
+      return start !== null ? start : planned;
+    }
     const prev = card.rows[i - 1];
     if (prev.refuel) return planned;
     return parseNum(prev.fuel);

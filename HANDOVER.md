@@ -62,8 +62,9 @@ should still be bumped every time.
   Rows show plain grey DEP GW; only >4800 gets an amber warning; the PDF carries
   the one-line "NOTE ON SRP" summary.
 - DEP GW / VAR / VERT margins are DEPARTURE figures via the fuel-inference
-  table in README §2.2 (flight 1 = planned; post-refuel = planned; else
-  previous landed).
+  table in README §2.2 (flight 1 = planned — or, on a carried-over card, the
+  previous card's last landed fuel; post-refuel = planned; else previous
+  landed). Ground runs (0 min) are never listed in the "over 4600" SRP note.
 - No per-aircraft weight memory (varies by crew; certified M&B app exists).
 - Power check once per card, six fields, REDO to overwrite.
 - Carry-over: SRP +1, AVAILABLE = previous REMAINING.
