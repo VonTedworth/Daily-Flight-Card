@@ -52,8 +52,8 @@ function open(storedTrip) {
   check("collapsed view: exactly three numbers per stop (min, actual, margin)", [0, 1, 2].every((i) => qa(`[data-stop="${i}"] [data-min], [data-stop="${i}"] [data-actual], [data-stop="${i}"] [data-margin]`).length === 3 && qa(`[data-stop="${i}"] input`).length === 1));
   check("sector line: → EGKD · 39 nm · C · ALTN EGMD · 194 KG", tx('[data-sector-line="0"]').includes("→ EGKD · 39 nm · C · ALTN EGMD") && tx('[data-sector-line="0"]').includes("194 KG"));
   check("sector lines 2 and 3 name EGLC and EGKK; burns 200 and 136", tx('[data-sector-line="1"]').includes("ALTN EGLC") && tx('[data-sector-line="1"]').includes("200 KG") && tx('[data-sector-line="2"]').includes("ALTN EGKK") && tx('[data-sector-line="2"]').includes("136 KG"));
-  check("PLANNED tag on Redhill; CONFIRM on William Harvey and King's", tx('[data-stop="0"] [data-status]') === "PLANNED" && tx('[data-stop="1"] [data-status]') === "CONFIRM" && tx('[data-stop="2"] [data-status]') === "CONFIRM");
-  check("tagged sites remain selectable", stopSel(0).value === "EGKR" && [...stopSel(1).options].some((o) => o.value === "EGKR"));
+  check("no PLANNED / CONFIRM tags on the stop cards", qa("[data-status]").length === 0 && !qa("[data-stop]").some((c) => /PLANNED(?! ON LANDING)|CONFIRM/.test(c.textContent)));
+  check("PinS sites and Redhill remain selectable", stopSel(0).value === "EGKR" && [...stopSel(1).options].some((o) => o.value === "EGKR"));
   check("stop list = IFR airfields + PinS sites only (no plain hospitals or VFR refuel points)", (() => { const v = [...stopSel(0).options].map((o) => o.value); return v.includes("EGSS") && v.includes("EGGB") && v.includes("EGKD") && !v.some((x) => /^H_/.test(x)) && !v.includes("EGMH") && !v.includes("EGTO"); })());
   check("no REFUEL HERE at William Harvey (no fuel there yet)", !q('[data-stop="1"] [data-refuel]'));
   check("no 'what if fuel at William Harvey' control shipped", !A.d.getElementById("root").textContent.toUpperCase().includes("WHAT IF"));
@@ -77,10 +77,10 @@ function open(storedTrip) {
   const det = q('[data-detail="0"]');
   check("tapping a sector line opens its details", !!det);
   const chip = (i, c) => q(`[data-chip="${i}:${c}"]`);
-  check("PinS destination: only C and D offered (VMC, A, B disabled); C selected", ["VMC", "A", "B"].every((c) => chip(0, c).disabled) && !chip(0, "C").disabled && !chip(0, "D").disabled && chip(0, "C").getAttribute("aria-pressed") === "true");
+  check("PinS destination: IFR profiles C and D only (VMC, A, B disabled), VFR offered; C selected", ["VMC", "A", "B"].every((c) => chip(0, c).disabled) && !chip(0, "C").disabled && !chip(0, "D").disabled && !chip(0, "VFR").disabled && chip(0, "C").getAttribute("aria-pressed") === "true");
   check("profile chips carry their hints (C: 1 ALTN +800M, D: 2 ALTN FARTHER)", chip(0, "C").textContent.includes("1 ALTN") && chip(0, "C").textContent.includes("+800M") && chip(0, "D").textContent.includes("FARTHER"));
   check("description explains why VMC/A/B are not offered for PinS", det.textContent.includes("PinS destination: VMC, A and B not offered (OMA 8.3.2.7.7"));
-  check("approaches lines for the destination and the alternate", tx('[data-detail="0"] [data-approaches="EGKD"]').includes("PinS (CONFIRM)") && tx('[data-detail="0"] [data-approaches="EGMD"]').includes("ILS 21 · RNP 21 · NDB 03"));
+  check("approaches lines for the destination and the alternate (no status words)", tx('[data-detail="0"] [data-approaches="EGKD"]').includes("PinS") && !/CONFIRM|PLANNED/.test(tx('[data-detail="0"]')) && tx('[data-detail="0"] [data-approaches="EGMD"]').includes("ILS 21 · RNP 21 · NDB 03"));
   const pick = q('[data-detail="0"] select[data-alt-picker="alt"]');
   check("alternate picker shows EGMD marked 'nearest'", pick.value === "EGMD" && det.textContent.includes("nearest"));
   check("PinS destination: Shoreham is not in the alternate list", ![...pick.options].some((o) => o.value === "EGKA"));
@@ -95,7 +95,7 @@ function open(storedTrip) {
   check("+ ADD SECTOR adds a stop (EGKK) and a sector line", qa("[data-stop]").length === 5 && stopSel(4).value === "EGKK" && qa("[data-sector-line]").length === 4);
   check("Gatwick destination defaults to B", tx('[data-sector-line="3"]').includes("· B ·"));
   click(q('[data-sector-line="3"]')); await sleep(80);
-  check("Gatwick destination offers all five profiles", ["VMC", "A", "B", "C", "D"].every((c) => !chip(3, c).disabled));
+  check("Gatwick destination offers all six profiles (incl. VFR)", ["VMC", "A", "B", "C", "D", "VFR"].every((c) => !chip(3, c).disabled));
   check("Gatwick destination: Shoreham IS in the alternate list", [...q('[data-detail="3"] select[data-alt-picker="alt"]').options].some((o) => o.value === "EGKA"));
   // sector 0 still has a chosen alternate (EGKK); set it back so the brief's numbers apply
   await setSelect(q('[data-detail="0"] select[data-alt-picker="alt"]'), "EGMD");
@@ -104,6 +104,14 @@ function open(storedTrip) {
     check(`profile ${c} on EGKR→EGKK: ${want}`, mins().join() === want);
   }
   check("D shows a 2nd alternate picker (EGKB + EGKA)", q('[data-detail="3"] select[data-alt-picker="alt"]').value === "EGKB" && q('[data-detail="3"] select[data-alt-picker="alt2"]').value === "EGKA" && tx('[data-sector-line="3"]').includes("ALTN EGKB+EGKA"));
+  click(chip(3, "VFR")); await sleep(60);
+  check("VFR chip: sector line reads '· VFR · NO ALTN'", tx('[data-sector-line="3"]').includes("· VFR · NO ALTN"));
+  check("VFR chip: no alternate picker, table ends with Final Reserve VFR day 100", !q('[data-detail="3"] select[data-alt-picker]') && qa('[data-detail="3"] [data-row]').pop().textContent.includes("VFR day") && qa('[data-detail="3"] [data-row]').pop().textContent.includes("100"));
+  check("VFR leg to Gatwick: minimums 759 · 565 · 365 · 140", mins().join() === "759,565,365,140");
+  click(chip(0, "VFR")); await sleep(60);
+  check("VFR on a PinS sector: the 'PinS destination…' IFR note is not shown", !tx('[data-detail="0"]').includes("PinS destination: VMC, A and B not offered"));
+  click(chip(0, "C")); await sleep(60);
+  check("VFR chip carries its hint (NO ALTN / NO APP)", chip(3, "VFR").textContent.includes("NO ALTN") && chip(3, "VFR").textContent.includes("NO APP"));
   await setSelect(stopSel(4), "EGKA");
   check("changing a destination resets that sector's profile to its default (Shoreham → B)", tx('[data-sector-line="3"]').includes("· B ·"));
   check("Shoreham destination: A not offered", chip(3, "A").disabled && !chip(3, "B").disabled);

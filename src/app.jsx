@@ -80,7 +80,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v12";
+const APP_VERSION = "v13";
 // The user guide (rendered on GitHub). Opening it needs signal; the app itself does not.
 const README_URL = "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md";
 const BUILD_DATE = typeof window !== "undefined" && window.__BUILD_DATE__ ? window.__BUILD_DATE__ : "";
@@ -1943,14 +1943,13 @@ function makeTripPdf(r, meta) {
   stops.forEach((id, i) => {
     const st = site(id);
     const last = i === stops.length - 1;
-    const status = planner.planStatus(st);
     const entered = !isNaN(parseInt(r.trip.actual[i], 10));
     const fuelTxt = r.fuel[i] === null ? "-" : `${r.fuel[i]} ${last ? "planned on landing" : r.refuelAt[i] ? (entered ? "after refuel" : "after refuel (min)") : entered ? "actual" : i === 0 ? "(lift at min)" : "planned"}`;
     const margin = last || (i === 0 && !r.headline.entered) ? null : r.margin[i];
     ensure(9);
     font("bold", 9, DARK);
     doc.text(String(i + 1), cx[0], y);
-    doc.text(pdfText(`${st.icao} ${st.name}${status ? " [" + status.toUpperCase() + "]" : ""}`).slice(0, 44), cx[1], y);
+    doc.text(pdfText(`${st.icao} ${st.name}`).slice(0, 44), cx[1], y);
     doc.text(last ? "-" : String(r.sec[i].gate ?? "-"), cx[2], y);
     font("normal", 9, DARK);
     doc.text(fuelTxt, cx[3], y);
@@ -1981,7 +1980,7 @@ function makeTripPdf(r, meta) {
     font("bold", 9.5, DARK);
     doc.text(`BURN ${s.burn} KG`, W - M, y, { align: "right" });
     y += 4.4;
-    para(SCENARIO_TEXT[s.sc] + (s.profile.key === "pins" ? " " + PINS_NOTE : ""), 7.8, GREY);
+    para(SCENARIO_TEXT[s.sc] + (s.profile.key === "pins" && !s.vfr ? " " + PINS_NOTE : ""), 7.8, GREY);
     const appr = [s.to, ...(s.needAlts >= 1 && s.a1 ? [s.a1] : []), ...(s.needAlts === 2 && s.a2 ? [s.a2] : [])]
       .map((x) => `${x.id}: ${approachSummary(x.id).join(" · ") || "none listed"}`)
       .join("   ");
@@ -2060,9 +2059,8 @@ async function shareTripPdf(r) {
 const siteName = (st) => `${st.icao || st.short} ${st.name.toUpperCase()}`;
 function siteCaption(st) {
   const kind = { airfield_ifr: "IFR airfield", pins_site: "PinS site", refuel_vfr: "VFR refuel point", hospital: "hospital (map only)" }[st.type] || st.type;
-  const status = planner.planStatus(st);
   const fuel = st.type === "hospital" ? "" : st.fuel ? " · fuel" : " · no fuel";
-  return `${st.icao ? st.icao + " " : ""}${st.name} — ${kind}${status ? ` (${status.toUpperCase()})` : ""}${fuel}`;
+  return `${st.icao ? st.icao + " " : ""}${st.name} — ${kind}${fuel}`;
 }
 
 // Wireframe map: ONS county outlines + every dataset site in the same projection
@@ -2294,7 +2292,6 @@ function IfrFuel() {
     const gate = last ? null : r.sec[i].gate;
     const margin = last || (i === 0 && !r.headline.entered) ? null : r.margin[i];
     const warn = !last && margin !== null && margin < 0;
-    const status = planner.planStatus(st);
     return (
       <div
         key={`stop-${i}`}
@@ -2309,11 +2306,6 @@ function IfrFuel() {
               </option>
             ))}
           </select>
-          {status && (
-            <span data-status style={{ ...pill(false), cursor: "default", color: C.amber, borderColor: C.amber + "80" }}>
-              {status.toUpperCase()}
-            </span>
-          )}
           {mid && planner.hasFuel(st) && (
             <button data-refuel={i} onClick={() => toggleRefuel(i)} aria-pressed={rf} style={pill(rf)}>
               REFUEL HERE
@@ -2465,7 +2457,7 @@ function IfrFuel() {
             </div>
             <div style={{ fontFamily: mono, fontSize: 9.5, color: C.grey, lineHeight: 1.5, margin: "7px 0 9px", borderLeft: `2px solid ${C.edge}`, paddingLeft: 8 }}>
               {SCENARIO_TEXT[s.sc]}
-              {s.profile.key === "pins" && <span style={{ opacity: 0.75 }}> {PINS_NOTE}</span>}
+              {s.profile.key === "pins" && !s.vfr && <span style={{ opacity: 0.75 }}> {PINS_NOTE}</span>}
             </div>
             <div data-approaches={s.to.id} style={{ fontFamily: mono, fontSize: 9.5, lineHeight: 1.5, color: C.white, marginBottom: 6 }}>
               <span style={{ color: C.grey, letterSpacing: "0.1em", marginRight: 6 }}>APPROACHES {s.to.id}</span>

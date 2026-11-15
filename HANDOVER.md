@@ -105,7 +105,8 @@ should still be bumped every time.
   storage or the other tabs.
 - IFR FUEL follows the OMA — never less restrictive, not more restrictive. Rules live in
   the dataset (`oma_rules`: gnss_approach_types, alternate_validity,
-  profiles_by_destination, multi_sector), not in code. PinS destinations: C/D only.
+  profiles_by_destination, multi_sector), not in code. PinS destinations: C/D only
+  (IFR); VFR legs allowed anywhere.
 
 ## Decisions log
 - July 2026 — WX/METAR tab investigated and rejected: aviationweather.gov
@@ -123,3 +124,8 @@ should still be bumped every time.
 - Open items (brief §7, kept as data, awaiting confirmation): contingency 10% per sector
   planned as used; no PinS plan without an alternate; PinS procedure status; site
   coordinates (EGGB user-supplied); OMA PinS text provisional.
+- Nov 2026 — IFR FUEL: VFR added as a sixth profile (data: oma_rules.scenarios.VFR, offered for every
+  destination): start & taxi + trip + 10% contingency (same as IFR, Ed's choice) + VFR day final
+  reserve 100; no approach, no alternate. Night VFR not covered. PLANNED/CONFIRM approach status is
+  no longer displayed anywhere (all PinS are unofficial until plates exist); the `status` field
+  stays in the data and still bars those sites from being alternates.

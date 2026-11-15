@@ -11,7 +11,7 @@ import GEO from "./map-geometry.json";
 
 export { DATA };
 export const AC = DATA.aircraft;
-export const SCENARIO_ORDER = ["VMC", "A", "B", "C", "D"];
+export const SCENARIO_ORDER = ["VMC", "A", "B", "C", "D", "VFR"];
 
 // Profile descriptions (from the approved prototype; OMA 8H 8.1.3.3.2).
 export const SCENARIO_TEXT = {
@@ -20,6 +20,7 @@ export const SCENARIO_TEXT = {
   B: "One alternate. Alternate forecast ≥ RVR/VIS + 400 m, ceiling ≥ DH/MDH + 200 ft.",
   C: "One alternate; destination weather from an uncertified source (e.g. SkylinkPro at a PinS site). Alternate forecast ≥ RVR/VIS + 800 m, ceiling ≥ DH/MDH + 400 ft. Same fuel as B.",
   D: "Two alternates. Fuel planned to the farther one.",
+  VFR: "VFR leg (day): flown visually, so no IFR approach and no alternate. Start & taxi + trip + contingency + VFR day final reserve.",
 };
 export const PINS_NOTE = "PinS destination: VMC, A and B not offered (OMA 8.3.2.7.7; site weather uncertified).";
 
@@ -30,6 +31,7 @@ export const SCENARIO_HINT = {
   B: ["1 ALTN", "+400M"],
   C: ["1 ALTN", "+800M"],
   D: ["2 ALTN", "FARTHER"],
+  VFR: ["NO ALTN", "NO APP"],
 };
 
 // Published approaches at a site, for the information lines in each sector's details.
@@ -45,7 +47,9 @@ export function approachSummary(id, data = DATA) {
   return st.approaches.map((a) => {
     const r = String(a.rwy || "").trim();
     const rwy = r.toLowerCase() === "all" ? " ALL RWYS" : r && r !== "-" ? " " + r.toUpperCase() : "";
-    const extra = [a.note && a.note.toUpperCase(), a.status && a.status.toUpperCase()].filter(Boolean).join(", ");
+    // `status` (planned / confirm) is kept in the data — it still bars a site from being an
+    // alternate — but is no longer displayed: every PinS is in planning until plates exist.
+    const extra = a.note ? a.note.toUpperCase() : "";
     return `${APP_LABEL[a.type] || a.type.replace(/_/g, " ")}${rwy}${extra ? ` (${extra})` : ""}`;
   });
 }
@@ -146,7 +150,10 @@ export function makePlanner(data = DATA) {
       const rest = list.filter((s) => s !== a1);
       const a2 = rest.find((s) => s.id === t.alt2[i]) || rest[0] || null;
       const dist = nm(from, to), trip = leg(dist), cont = Math.round(CONT * trip);
-      const burn = TAXI + trip + cont + PER_ARRIVAL * APP;
+      // A VFR leg (scenario ifr: false) flies no IFR approach at its destination.
+      const arrivalApps = scen.ifr === false ? 0 : PER_ARRIVAL;
+      const reserve = scen.final_reserve ? ac[scen.final_reserve] : RESERVE;
+      const burn = TAXI + trip + cont + arrivalApps * APP;
       const needAlts = scen.alt_fuel ? scen.alternates : 0;
       const far = needAlts === 2 && a2 && a1 && nm(to, a2) > nm(to, a1) ? a2 : a1;
       let own, altNm = null, altKg = null, error = null;
@@ -154,11 +161,11 @@ export function makePlanner(data = DATA) {
         if (!far || (needAlts === 2 && !a2)) { own = null; error = "NO VALID ALTERNATE"; }
         else { altNm = nm(to, far); altKg = leg(altNm); own = burn + altKg + PER_ARRIVAL * APP + RESERVE; }
       } else {
-        const extraApps = scen.approaches_default - PER_ARRIVAL; // A: second approach; VMC: none
+        const extraApps = Math.max(0, scen.approaches_default - arrivalApps); // A: second approach; VMC/VFR: none
         const add = scen.trip_add_min ? Math.round((scen.trip_add_min / 60) * ac.cruise_burn_kg_per_hr) : 0;
-        own = burn + extraApps * APP + add + RESERVE;
+        own = burn + extraApps * APP + add + reserve;
       }
-      sec.push({ i, from, to, profile: prof, sc, needAlts, list, a1, a2, far, auto: !chosen1, dist, trip, cont, burn, altNm, altKg, own, error });
+      sec.push({ i, from, to, profile: prof, sc, vfr: scen.ifr === false, arrivalApps, reserve, needAlts, list, a1, a2, far, auto: !chosen1, dist, trip, cont, burn, altNm, altKg, own, error });
     }
     // Minimum to lift, worked backwards. A refuel stop breaks the chain.
     for (let i = sec.length - 1; i >= 0; i--) {
@@ -192,8 +199,10 @@ export function makePlanner(data = DATA) {
       const scen = rules.scenarios[s.sc];
       if (s.gate === null) rows.push({ item: "—", req: s.error || "chain incomplete", kg: null });
       else if (s.useOnward) {
-        rows.push({ item: "IFR Approach", req: `${PER_ARRIVAL} × ${APP} kg at ${s.to.id}`, kg: PER_ARRIVAL * APP });
+        if (s.arrivalApps) rows.push({ item: "IFR Approach", req: `${PER_ARRIVAL} × ${APP} kg at ${s.to.id}`, kg: PER_ARRIVAL * APP });
         rows.push({ item: "Onward", req: `Min to lift ${s.to.id}`, kg: sec[s.i + 1].gate });
+      } else if (s.vfr) {
+        rows.push({ item: "Final Reserve", req: "VFR day", kg: s.reserve });
       } else if (!s.needAlts) {
         const nApp = scen.approaches_default;
         rows.push({ item: nApp > 1 ? "IFR Approaches" : "IFR Approach", req: `${nApp} × ${APP} kg at ${s.to.id}`, kg: nApp * APP });

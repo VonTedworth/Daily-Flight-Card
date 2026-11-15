@@ -32,14 +32,15 @@
       "A":    { "label": "2 approaches, 1 field",       "alternates": 0, "approaches_default": 2, "alt_fuel": false, "trip_add_min": 15, "gating": { "ceiling_above_minima_ft": 400, "vis_min_m": 3000, "independent_aids": true } },
       "B":    { "label": "1 alternate",                 "alternates": 1, "approaches_default": 2, "alt_fuel": true,  "altn_minima": { "rvr_vis_add_m": 400, "ceiling_add_ft": 200 } },
       "C":    { "label": "1 alternate (reasonable prob)","alternates": 1, "approaches_default": 2, "alt_fuel": true,  "altn_minima": { "rvr_vis_add_m": 800, "ceiling_add_ft": 400 } },
-      "D":    { "label": "2 alternates",                "alternates": 2, "approaches_default": 3, "alt_fuel": true,  "altn_rule": "plan to worse of the two" }
+      "D":    { "label": "2 alternates",                "alternates": 2, "approaches_default": 3, "alt_fuel": true,  "altn_rule": "plan to worse of the two" },
+      "VFR":  { "label": "VFR leg (day)",               "alternates": 0, "approaches_default": 0, "alt_fuel": false, "ifr": false, "final_reserve": "final_reserve_vfr_day_kg", "contingency": "same as IFR sectors (user decision Nov 2026)" }
     },
     "gnss_approach_types": ["RNP_LNAV", "RNP_LNAV_VNAV", "LPV", "PinS"],
     "alternate_validity": { "rule": "valid only if a non-GNSS approach exists at the alternate or at the destination", "ref": "OMA 8H 8.1.3.3.2; PinS: 8.3.2.7.4" },
     "profiles_by_destination": {
-      "pins":               { "allowed": ["C", "D"], "default": "C", "ref": "OMA 8H 8.3.2.7.4 / 8.3.2.7.7 — alternate always carried; site weather uncertified so B not valid" },
-      "airfield":           { "allowed": ["VMC", "A", "B", "C", "D"], "default": "B", "ref": "OMA 8H 8.1.3.3.2" },
-      "airfield_one_aid":   { "allowed": ["VMC", "B", "C", "D"], "default": "B", "note": "A needs two approaches on independent aids" }
+      "pins":               { "allowed": ["C", "D", "VFR"], "default": "C", "ref": "OMA 8H 8.3.2.7.4 / 8.3.2.7.7 — alternate always carried; site weather uncertified so B not valid" },
+      "airfield":           { "allowed": ["VMC", "A", "B", "C", "D", "VFR"], "default": "B", "ref": "OMA 8H 8.1.3.3.2" },
+      "airfield_one_aid":   { "allowed": ["VMC", "B", "C", "D", "VFR"], "default": "B", "note": "A needs two approaches on independent aids" }
     },
     "multi_sector": {
       "contingency": "10% of each sector's trip fuel, planned as used on every sector, nothing carried forward (OPEN — awaiting confirmation)",

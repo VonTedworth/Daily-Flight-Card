@@ -106,9 +106,9 @@ const joins = (l, a, b) => { const A = f.project(f.siteById(a).lat, f.siteById(a
   click(marker("H_PEM")); await sleep(80);
   check("tapping a hospital shows what it is", text().includes("Tunbridge Wells (Pembury) — hospital (map only)"));
   click(marker("EGKD")); await sleep(80);
-  check("tapping a PinS site shows its type, status and fuel", text().includes("EGKD William Harvey, Ashford — PinS site (CONFIRM) · no fuel"));
+  check("tapping a PinS site shows its type and fuel (no status word)", text().includes("EGKD William Harvey, Ashford — PinS site · no fuel"));
   click(marker("EGKR")); await sleep(80);
-  check("tapping Redhill shows its PLANNED PinS and fuel", text().includes("EGKR Redhill — IFR airfield (PLANNED) · fuel"));
+  check("tapping Redhill shows its type and fuel", text().includes("EGKR Redhill — IFR airfield · fuel"));
   check("taps never change the trip", JSON.stringify(w.localStorage.getItem("ifr-fuel-trip")) === before);
 
   check("map makes no network calls", net === 0);

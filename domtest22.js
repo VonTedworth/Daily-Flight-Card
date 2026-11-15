@@ -45,7 +45,7 @@ const def = (patch = {}) => Object.assign({ stops: ["EGKR", "EGKD", "EGKC", "EGK
   check("PDF records the app version and the figures used (for error checking)", /App v\d+/.test(b) && b.includes("130 kt") && b.includes("280 kg/hr") && b.includes("contingency 10%") && b.includes("density 0.79"));
   check("PDF route: EGKR > EGKD > EGKC > EGKR", b.includes("ROUTE  EGKR > EGKD > EGKC > EGKR"));
   check("PDF headline: REQUIRED TO LIFT EGKR 759 KG, fuel 820, ENOUGH +61 KG", b.includes("REQUIRED TO LIFT EGKR: 759 KG") && b.includes("FUEL AT EGKR: 820 KG") && b.includes("ENOUGH +61 KG"));
-  check("PDF stops: minimums 759 / 565 / 365 and the tags", b.includes("EGKR Redhill [PLANNED]") && b.includes("EGKD William Harvey, Ashford [CONFIRM]") && /\(565\) Tj/.test(b) && /\(365\) Tj/.test(b) && /\(759\) Tj/.test(b));
+  check("PDF stops: minimums 759 / 565 / 365, no PLANNED/CONFIRM tags", b.includes("EGKR Redhill") && b.includes("EGKD William Harvey, Ashford") && !b.includes("[PLANNED]") && !b.includes("[CONFIRM]") && /\(565\) Tj/.test(b) && /\(365\) Tj/.test(b) && /\(759\) Tj/.test(b));
   check("PDF stops: 820 actual, planned figures, 290 planned on landing", b.includes("820 actual") && b.includes("626 planned") && b.includes("290 planned on landing"));
   check("PDF sectors: profile, alternate (nearest), burn", b.includes("SECTOR 1  EGKR > EGKD") && b.includes("PROFILE C") && b.includes("ALTN EGMD") && b.includes("nearest") && b.includes("BURN 194 KG") && b.includes("BURN 200 KG") && b.includes("BURN 136 KG"));
   check("PDF sector tables: requirement lines down to Onward / min to lift", b.includes("Start & Taxi") && b.includes("Contingency") && b.includes("Min to lift EGKD") && b.includes("Onward chain governs"));

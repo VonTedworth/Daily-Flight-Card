@@ -139,7 +139,7 @@ UPLIFT L  = UPLIFT KG ÷ DENSITY
 
 ### Planning a trip — step by step
 1. **Build the route.** Set the first stop (where you lift from) and each following stop with the dropdowns; **+ ADD SECTOR** adds one, **✕** removes one. The map draws the route as you go.
-2. **Check each sector's profile.** The collapsed line under each card shows destination · distance · profile · alternate(s) · sector burn. Tap it to open the sector: pick the profile that matches the forecast (the hint inside each letter says what it means — e.g. *1 ALTN +800M*), and check the alternate. The nearest valid alternate is chosen for you; change it if needed. Profiles the OMA does not allow for that destination are greyed out.
+2. **Check each sector's profile.** The collapsed line under each card shows destination · distance · profile · alternate(s) · sector burn. Tap it to open the sector: pick the profile that matches the forecast (the hint inside each letter says what it means — e.g. *1 ALTN +800M*) — or **VFR** if that leg is flown visually — and check the alternate. The nearest valid alternate is chosen for you; change it if needed. Profiles the OMA does not allow for that destination are greyed out.
 3. **Read REQUIRED TO LIFT.** The headline is the fuel needed at the first stop for the whole trip, including every later minimum that has to be carried because the stops in between have no fuel.
 4. **Enter the fuel on board at the first stop.** The headline turns **ENOUGH +n** or **SHORT −n**, and the planned fuel at every later stop follows (shown dim in each ACTUAL box).
 5. **During the trip, check the gauge against MIN TO LIFT before each departure.** Type the actual figure into that stop's box: MARGIN updates, and every later planned figure follows from what you entered. A negative margin turns the card amber — *IFR departure not available: refuel, or hold for weather.*
@@ -147,26 +147,23 @@ UPLIFT L  = UPLIFT KG ÷ DENSITY
 7. **Keep a record.** **EXPORT PLAN (PDF)** saves the plan exactly as shown (below).
 
 ### Stops
-Any **IFR airfield** or **PinS site** can be a stop: EGKR Redhill, EGKK, EGKB, EGKA, EGMD, EGMC, EGHI, EGLL, EGLC, EGSS, and the PinS sites EGKD William Harvey (WHH), EGKC King's College (KCH), EGRS Royal Sussex (RSCH), EGGB East Brighton Park (EBP). Other hospitals and the VFR refuel points (Manston, Rochester) are map markers only. A site whose only approach is not yet usable carries a tag — **PLANNED** (Redhill's PinS) or **CONFIRM** (the hospital PinS procedures) — and stays selectable. **+ ADD SECTOR** adds a stop; **✕** removes one (minimum two).
+Any **IFR airfield** or **PinS site** can be a stop: EGKR Redhill, EGKK, EGKB, EGKA, EGMD, EGMC, EGHI, EGLL, EGLC, EGSS, and the PinS sites EGKD William Harvey (WHH), EGKC King's College (KCH), EGRS Royal Sussex (RSCH), EGGB East Brighton Park (EBP). Other hospitals and the VFR refuel points (Manston, Rochester) are map markers only. **+ ADD SECTOR** adds a stop; **✕** removes one (minimum two).
 
-### PLANNED and CONFIRM tags
-The amber tag on a stop card comes from the `status` of that site's approaches in the dataset, and is shown when a site's **only** procedures are not yet usable:
-- **PLANNED** — the procedure does not exist yet. Redhill's only listed procedure is a PinS marked *planned*.
-- **CONFIRM** — the procedure is listed but still to be confirmed as published and usable: the hospital PinS sites (William Harvey, King's College, Royal Sussex, East Brighton Park). This is open item 3.
-
-The tag is a warning that the plan relies on a procedure you must confirm before flying it. It changes no fuel figure and the site stays selectable as a stop. Its one effect on planning: a field whose only approach is tagged cannot be offered as an **alternate** — which is why Redhill never appears in an alternate list. When a procedure is confirmed, removing its `status` in the dataset clears the tag.
+### Approach status (planned / confirm) — not shown
+Every PinS procedure in the dataset is still in the planning phase: Redhill's PinS is marked `planned` (it does not exist yet) and the hospital PinS procedures (William Harvey, King's College, Royal Sussex, East Brighton Park) are marked `confirm` (not yet confirmed as published and usable — open item 3). Since everything except the airfields is unofficial for now, the app **no longer shows** these as tags, in the approaches lines, on the map or in the PDF. The `status` stays in the dataset for one reason: a field whose only approach is not usable cannot be offered as an **alternate**, which is why Redhill never appears in an alternate list. To be revisited when the plates and procedure minima are available — clearing a procedure's `status` in the dataset makes it a normal published approach.
 
 ### Per sector (stop *i* → stop *i+1*)
 ```
 trip  = round(dist_nm ÷ 130 × 280)       great-circle distance, unrounded nm
 cont  = round(10% × trip)                planned as used on every sector
-burn  = 30 start & taxi + trip + cont + 70 (one approach at the destination)
+burn  = 30 start & taxi + trip + cont + 70 (one approach at the destination; none on a VFR leg)
 
 own requirement, by profile:
   VMC : burn + 150
   A   : burn + 70 (second approach) + 70 (15 min added to trip) + 150
   B, C: burn + alternate + 70 (approach at the alternate) + 150
   D   : as B, alternate = the FARTHER of the two alternates from the destination
+  VFR : 30 start & taxi + trip + cont + 100 (VFR day final reserve) — no approach, no alternate
 ```
 
 ### Minimum to lift — worked backwards from the last sector
@@ -185,8 +182,11 @@ Fuel then runs forwards: at each stop it is the **ACTUAL** figure if you entered
 | B | 1 | 1 ALTN · +400M | airfields (default) |
 | C | 1 | 1 ALTN · +800M | airfields; **PinS destinations (default)** |
 | D | 2 (fuel to the farther) | 2 ALTN · FARTHER | airfields; PinS destinations |
+| VFR | none | NO ALTN · NO APP | **every destination** — a leg flown VFR (e.g. back to Redhill after an IFR approach elsewhere) |
 
-**PinS destinations: C and D only.** OMA 8.3.2.7.4 — *PinS procedures offer no alleviation from requirements to declare and carry fuel for a destination alternate*; 8.3.2.7.7 — one destination alternate is assumed unless the destination meets planning minima from CAP 746-compliant weather. Site weather (SkylinkPro) is uncertified, so B does not apply. A site counts as a PinS destination if it is a PinS site or its only procedure is a PinS (so Redhill too). **B and C carry the same fuel**; they differ only in the alternate planning minima in the description (B +400 m / +200 ft, C +800 m / +400 ft). The weather minima are descriptive — **this version does not check weather**.
+**VFR leg.** Pick **VFR** in a sector's profile strip when that leg is flown visually: it carries no IFR approach and no alternate, and plans start & taxi 30 + trip + the same 10% contingency as the IFR sectors + the **VFR day final reserve 100 kg** (both from the dataset; the contingency choice is Ed's, Nov 2026). The collapsed line reads *VFR · NO ALTN*, and the leg still feeds the minimum-to-lift chain. Example: Redhill → Biggin Hill IFR (B, alternate London City) then Biggin Hill → Redhill VFR = **366 / 153 kg**, against 475 / 352 if the return were planned IFR. Night VFR is not covered (the dataset has no night VFR reserve).
+
+**PinS destinations: C and D only** (for IFR; a VFR leg into a PinS site is a VFR flight and may use VFR). OMA 8.3.2.7.4 — *PinS procedures offer no alleviation from requirements to declare and carry fuel for a destination alternate*; 8.3.2.7.7 — one destination alternate is assumed unless the destination meets planning minima from CAP 746-compliant weather. Site weather (SkylinkPro) is uncertified, so B does not apply. A site counts as a PinS destination if it is a PinS site or its only procedure is a PinS (so Redhill too). **B and C carry the same fuel**; they differ only in the alternate planning minima in the description (B +400 m / +200 ft, C +800 m / +400 ft). The weather minima are descriptive — **this version does not check weather**.
 
 **Alternate validity (OMA 8.1.3.3.2; PinS 8.3.2.7.4).** An airfield can be the alternate only if a **non-GNSS** approach exists at the alternate or at the destination. GNSS types are listed in the dataset (`gnss_approach_types`: RNP LNAV, RNP LNAV/VNAV, LPV, PinS). So for a PinS destination or Shoreham, only airfields with an ILS/NDB/VOR qualify; for Gatwick, Shoreham is allowed. Only airfields with a *usable* (not planned/confirm) approach are alternates, so Redhill is never one. The **nearest** valid alternate is chosen by default ("nearest"); pick another and it shows "chosen". Changing a destination resets that sector's profile and alternate to the defaults.
 
@@ -200,7 +200,7 @@ Map (route through every stop solid, each sector's alternate(s) dashed; tap a si
 **EXPORT PLAN (PDF)** (between + ADD SECTOR and RESET TRIP) builds a one- or two-page A4 PDF of the plan exactly as on screen and opens the share sheet (save to Files, Mail, etc.). It works offline. File name: `IFR FUEL <route> <dd.mm.yyyy> <hhmm>.pdf`, e.g. `IFR FUEL EGKR-EGKD-EGKC-EGKR 15.11.2026 1803.pdf`. Contents:
 - header with date/time, the disclaimer, the **app version** and **every figure the sums used** (130 kt, 280 kg/hr, start & taxi 30, approach 70, final reserve 150, contingency 10%, 15 min = 70, density 0.79) — so a plan can be re-checked by hand later;
 - the route, REQUIRED TO LIFT and the fuel entered at the first stop with ENOUGH/SHORT;
-- every stop: tag, MIN TO LIFT, fuel (actual / planned / after refuel / planned on landing), margin, refuel uplift, and any BELOW MINIMUM warning;
+- every stop: MIN TO LIFT, fuel (actual / planned / after refuel / planned on landing), margin, refuel uplift, and any BELOW MINIMUM warning;
 - every sector: distance, profile and its description, alternate(s) (nearest / chosen), sector burn, the approaches at the destination and alternate(s), and the full requirement table (MIN TO LIFT · REQUIREMENT · L · KG) summing to that site's minimum, noting when the onward chain governs;
 - the open items still awaiting confirmation.
 

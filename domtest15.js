@@ -57,10 +57,10 @@ check("A: 2 approaches + 15 min (70) + reserve, no alternate", rA.sec[3].needAlt
 // ── profiles by destination (OMA 8H 8.3.2.7.4 / 8.3.2.7.7) ──
 for (const id of ["EGKD", "EGKC", "EGRS", "EGGB", "EGKR"]) {
   const p = P.profilesFor(S(id));
-  check(`PinS destination ${id}: only C and D, default C`, eq(p.allowed, ["C", "D"]) && p.default === "C");
+  check(`PinS destination ${id}: IFR profiles C and D only (+ VFR leg), default C`, eq(p.allowed, ["C", "D", "VFR"]) && p.default === "C");
 }
 check("Shoreham destination (RNP only): A not offered", !P.profilesFor(S("EGKA")).allowed.includes("A") && P.profilesFor(S("EGKA")).default === "B");
-for (const id of ["EGKK", "EGKB", "EGMD", "EGMC", "EGHI", "EGLL", "EGLC", "EGSS"]) check(`${id} destination: all five profiles, default B`, eq(P.profilesFor(S(id)).allowed, ["VMC", "A", "B", "C", "D"]) && P.profilesFor(S(id)).default === "B");
+for (const id of ["EGKK", "EGKB", "EGMD", "EGMC", "EGHI", "EGLL", "EGLC", "EGSS"]) check(`${id} destination: all five IFR profiles + VFR, default B`, eq(P.profilesFor(S(id)).allowed, ["VMC", "A", "B", "C", "D", "VFR"]) && P.profilesFor(S(id)).default === "B");
 const rPin = P.computeTrip(trip({ scen: ["B", "VMC", "A"] }));
 check("a PinS sector asked for B / VMC / A falls back to C", rPin.sec.every((s) => s.sc === "C"));
 
@@ -110,7 +110,25 @@ check("Redhill tagged PLANNED (its PinS is planned)", P.planStatus(S("EGKR")) ==
 check("William Harvey / King's / Royal Sussex / East Brighton Park tagged CONFIRM", ["EGKD", "EGKC", "EGRS", "EGGB"].every((id) => P.planStatus(S(id)) === "confirm"));
 check("published airfields carry no tag", ["EGKK", "EGSS", "EGKA"].every((id) => P.planStatus(S(id)) === null));
 check("approach line: Biggin Hill ILS 21 · RNP 21 · RNP 03 (RF, NEW 2026)", f.approachSummary("EGKB").join(" · ") === "ILS 21 · RNP 21 · RNP 03 (RF, NEW 2026)");
-check("approach line: Redhill PinS (PLANNED); William Harvey PinS (CONFIRM)", f.approachSummary("EGKR").join() === "PinS (PLANNED)" && f.approachSummary("EGKD").join() === "PinS (CONFIRM)");
+check("approach lines no longer show planned/confirm status (Redhill, William Harvey: 'PinS')", f.approachSummary("EGKR").join() === "PinS" && f.approachSummary("EGKD").join() === "PinS");
+check("…while approach notes stay (Biggin Hill RNP 03 RF, NEW 2026)", f.approachSummary("EGKB").join(" · ").includes("(RF, NEW 2026)"));
+
+// ── VFR leg (no alternate, no IFR approach, VFR day final reserve) ──
+const tV = { stops: ["EGKR", "EGKB", "EGKR"], actual: ["", "", ""], refuel: [false, false, false], scen: ["B", "VFR"], alt: [null, null], alt2: [null, null] };
+const rV = P.computeTrip(tV);
+const v = rV.sec[1];
+check("Biggin Hill IFR (B) then VFR to Redhill: minimums 366 / 153", eq(gates(rV), [366, 153]));
+check("VFR leg = start & taxi 30 + trip + 10% contingency + VFR day reserve 100 (no approach)", v.vfr && v.own === 30 + v.trip + v.cont + 100 && v.burn === 30 + v.trip + v.cont);
+check("VFR leg has no alternate", v.needAlts === 0 && !v.rows.some((x) => /Alternate|Approach/.test(x.item)));
+check("VFR leg table: Start & Taxi · Trip · Contingency · Final Reserve (VFR day 100) summing to its minimum", eq(v.rows.map((x) => x.item), ["Start & Taxi", "Trip", "Contingency", "Final Reserve"]) && v.rows[3].req === "VFR day" && v.rows[3].kg === 100 && v.rows.reduce((a, x) => a + x.kg, 0) === v.gate);
+check("same trip flown IFR (B) needs more: 475 / 352", eq(gates(P.computeTrip({ ...tV, scen: ["B", "B"] })), [475, 352]));
+check("VFR is offered for every destination, PinS sites included", P.stopSites().every((s) => P.profilesFor(s).allowed.includes("VFR")));
+check("a VFR sector into a PinS site is accepted (not forced back to C)", P.computeTrip({ ...f.freshTrip(), scen: ["VFR", null, null] }).sec[0].sc === "VFR");
+const rV4 = P.computeTrip(withSector(trip(), "EGKK", "VFR"));
+check("default trip + VFR leg to Gatwick: 759 / 565 / 365 / 140 (VFR = VMC 260 − 70 approach − 50 reserve)", eq(gates(rV4), [759, 565, 365, 140]));
+const dV = clone(f.DATA); dV.aircraft.final_reserve_vfr_day_kg = 120;
+check("VFR reserve read from the dataset (120 → +20)", f.makePlanner(dV).computeTrip(tV).sec[1].own === v.own + 20);
+check("six profiles in order, VFR hint NO ALTN / NO APP", eq(f.SCENARIO_ORDER, ["VMC", "A", "B", "C", "D", "VFR"]) && f.SCENARIO_HINT.VFR.join(" ") === "NO ALTN NO APP");
 
 // ── trip normalisation (stored trips) ──
 check("garbage / unknown stops → default trip", eq(P.normalizeTrip(null).stops, f.DEFAULT_TRIP.stops) && eq(P.normalizeTrip({ stops: ["EGKR", "XXXX"] }).stops, f.DEFAULT_TRIP.stops));
