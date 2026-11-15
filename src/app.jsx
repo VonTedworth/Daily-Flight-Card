@@ -6,17 +6,16 @@ import {
   SCENARIO_ORDER,
   SCENARIO_TEXT,
   SCENARIO_HINT,
+  PINS_NOTE,
   approachSummary,
-  computeFuel,
-  defaultApproaches,
-  originSites,
-  destSites,
+  planner,
+  freshTrip,
+  haversineNm,
+  kgToL,
   DATA as FUEL_DATA,
   MAP,
   project,
-  tapSite,
   placeLabels,
-  siteById,
 } from "./fuelcalc.js";
 
 // ═══════════════════════════════════════════════════════════
@@ -81,7 +80,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v10";
+const APP_VERSION = "v11";
 const BUILD_DATE = typeof window !== "undefined" && window.__BUILD_DATE__ ? window.__BUILD_DATE__ : "";
 const NUM_ROWS = 7; // one SRP page has seven sectors
 // >4600 kg is NOT an exceedance — the AW169 all-up mass is 4800 kg.
@@ -1821,60 +1820,73 @@ function FlightCard({
 // ═══════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════
-// TAB — IFR FUEL planner (offline cross-check, AW169)
-// All figures come from the bundled dataset (src/fuel-planner-dataset.json);
-// the maths lives in src/fuelcalc.js. No network, no storage: nothing here
-// touches any other tab or the card.
+// TAB — IFR FUEL planner, MULTI-SECTOR (offline cross-check, AW169)
+// All maths is src/fuelcalc.js — a port of the approved prototype's compute(), with every
+// figure and rule read from the bundled dataset. This file only renders it. The trip is
+// kept under its own localStorage key and never touches the flight card's storage.
 // ═══════════════════════════════════════════════════════════
 
+const TRIP_KEY = "ifr-fuel-trip";
 const signed = (n) => `${n > 0 ? "+" : ""}${n}`;
 
-// Wireframe map: ONS county outlines + every dataset site, plotted in the same
-// projection (src/map-geometry.json is generated for exactly that). Works as a
-// selector — tapping an airfield takes the next unset role (origin → destination →
-// alternate); tapping a selected one clears it. Refuel points and hospitals are
-// display-only (tap for a caption). No runtime fetch: geometry is bundled.
-function IfrMap({ sel, needAlts, onTap, note }) {
-  const roleOf = (id) =>
-    id === sel.origin
-      ? C.green
-      : id === sel.dest
-      ? C.cyan
-      : (needAlts >= 1 && id === sel.alt1) || (needAlts === 2 && id === sel.alt2)
-      ? C.amber
-      : null;
+function loadTrip() {
+  try {
+    return planner.normalizeTrip(JSON.parse(localStorage.getItem(TRIP_KEY)));
+  } catch {
+    return freshTrip();
+  }
+}
+
+const siteName = (st) => `${st.icao || st.short} ${st.name.toUpperCase()}`;
+function siteCaption(st) {
+  const kind = { airfield_ifr: "IFR airfield", pins_site: "PinS site", refuel_vfr: "VFR refuel point", hospital: "hospital (map only)" }[st.type] || st.type;
+  const status = planner.planStatus(st);
+  const fuel = st.type === "hospital" ? "" : st.fuel ? " · fuel" : " · no fuel";
+  return `${st.icao ? st.icao + " " : ""}${st.name} — ${kind}${status ? ` (${status.toUpperCase()})` : ""}${fuel}`;
+}
+
+// Wireframe map: ONS county outlines + every dataset site in the same projection
+// (src/map-geometry.json is generated for exactly that). Draws the whole trip route and each
+// sector's alternate(s). Tapping a site shows what it is; stops are chosen with the dropdowns.
+function IfrMap({ result, note, onTap }) {
+  const stops = result.trip.stops;
+  const stopSet = new Set(stops);
+  const altIds = new Set();
+  result.sec.forEach((s) => {
+    if (s.needAlts >= 1 && s.a1) altIds.add(s.a1.id);
+    if (s.needAlts === 2 && s.a2) altIds.add(s.a2.id);
+  });
+  const roleOf = (id) => (id === stops[0] ? C.green : stopSet.has(id) ? C.cyan : altIds.has(id) ? C.amber : null);
   const sites = FUEL_DATA.sites.map((st) => ({ st, ...project(st.lat, st.lon) }));
   const get = (id) => sites.find((x) => x.st.id === id);
+  const small = (st) => st.type === "hospital" || st.type === "pins_site";
+  const text = (st) => (small(st) ? st.short || st.icao : st.icao);
 
-  // Label priority: selected roles, IFR airfields, refuel points, then hospitals (short names).
-  // Every site is labelled; the placer nudges labels clear of each other and of the markers.
-  const rank = (x) => (roleOf(x.st.id) ? 0 : x.st.type === "airfield_ifr" ? 1 : x.st.type === "refuel_vfr" ? 2 : 3);
-  const labelled = [...sites]
-    .sort((a, b) => rank(a) - rank(b))
-    .map((x) => ({
-      id: x.st.id,
-      x: x.x,
-      y: x.y,
-      text: x.st.type === "hospital" ? x.st.short : x.st.icao,
-      fs: x.st.type === "hospital" ? 5.3 : 6.5,
-      must: true,
-    }));
-  const labels = placeLabels(labelled);
+  const rank = (x) => (roleOf(x.st.id) ? 0 : x.st.type === "airfield_ifr" ? 1 : x.st.type === "pins_site" ? 2 : x.st.type === "refuel_vfr" ? 3 : 4);
+  const labels = placeLabels(
+    [...sites].sort((a, b) => rank(a) - rank(b)).map((x) => ({ id: x.st.id, x: x.x, y: x.y, text: text(x.st), fs: small(x.st) ? 5.3 : 6.5, must: true }))
+  );
 
   const lines = [];
+  const seen = new Set();
   const seg = (a, b, color, dash) => {
-    const A = a && get(a), B = b && get(b);
-    if (A && B) lines.push({ key: `${a}-${b}`, x1: A.x, y1: A.y, x2: B.x, y2: B.y, color, dash });
+    const A = get(a), B = get(b);
+    const key = `${a}>${b}:${dash || ""}`;
+    if (A && B && a !== b && !seen.has(key)) {
+      seen.add(key);
+      lines.push({ key, x1: A.x, y1: A.y, x2: B.x, y2: B.y, color, dash });
+    }
   };
-  seg(sel.origin, sel.dest, C.cyan);
-  // alternates are planned in sequence: destination → alternate 1 → alternate 2
-  if (needAlts >= 1) seg(sel.dest, sel.alt1, C.amber, "3 2");
-  if (needAlts === 2) seg(sel.alt1, sel.alt2, C.amber, "3 2");
+  result.sec.forEach((s) => {
+    if (s.needAlts >= 1 && s.a1) seg(s.to.id, s.a1.id, C.amber, "3 2");
+    if (s.needAlts === 2 && s.a2) seg(s.to.id, s.a2.id, C.amber, "3 2");
+  });
+  for (let i = 0; i < stops.length - 1; i++) seg(stops[i], stops[i + 1], C.cyan);
 
-  const legend = (sym, color, text) => (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginRight: 10 }}>
+  const legend = (sym, color, label) => (
+    <span key={label} style={{ display: "inline-flex", alignItems: "center", gap: 4, marginRight: 10 }}>
       <span style={{ color }}>{sym}</span>
-      {text}
+      {label}
     </span>
   );
 
@@ -1883,50 +1895,30 @@ function IfrMap({ sel, needAlts, onTap, note }) {
       <svg
         viewBox={`0 0 ${MAP.meta.w} ${MAP.meta.h}`}
         role="img"
-        aria-label="Map of south-east England airfields"
-        style={{
-          display: "block",
-          width: "100%",
-          height: "auto",
-          background: C.inputBg,
-          border: `1px solid ${C.edge}`,
-          borderRadius: 8,
-        }}
+        aria-label="Map of the trip"
+        style={{ display: "block", width: "100%", height: "auto", background: C.inputBg, border: `1px solid ${C.edge}`, borderRadius: 8 }}
       >
         <g pointerEvents="none">
           {MAP.counties.map((c) => (
             <path key={c.n} d={c.d} fill={C.edge} stroke={C.inputBg} strokeWidth="0.5" strokeLinejoin="round" />
           ))}
           {lines.map((l) => (
-            <line key={l.key} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={l.color} strokeWidth="1.2" strokeDasharray={l.dash} />
+            <line key={l.key} data-route={l.dash ? "alternate" : "sector"} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={l.color} strokeWidth="1.2" strokeDasharray={l.dash} />
           ))}
         </g>
         {sites.map(({ st, x, y }) => {
           const role = roleOf(st.id);
-          const airfield = st.type === "airfield_ifr";
           return (
-            <g
-              key={st.id}
-              data-site={st.id}
-              role="button"
-              aria-label={`${st.icao || st.name}${role ? " selected" : ""}`}
-              onClick={() => onTap(st.id)}
-              style={{ cursor: "pointer" }}
-            >
+            <g key={st.id} data-site={st.id} role="button" aria-label={`${text(st)}${role ? " selected" : ""}`} onClick={() => onTap(st.id)} style={{ cursor: "pointer" }}>
               <circle cx={x} cy={y} r="7" fill="transparent" />
-              {airfield ? (
+              {st.type === "airfield_ifr" ? (
                 <circle cx={x} cy={y} r="3.2" fill={role || "none"} stroke={role || C.cyan} strokeWidth="1.1" />
               ) : st.type === "refuel_vfr" ? (
-                <polygon
-                  points={`${x},${y - 3.6} ${x + 3.6},${y} ${x},${y + 3.6} ${x - 3.6},${y}`}
-                  fill="none"
-                  stroke={C.amber}
-                  strokeWidth="1.1"
-                />
+                <polygon points={`${x},${y - 3.6} ${x + 3.6},${y} ${x},${y + 3.6} ${x - 3.6},${y}`} fill="none" stroke={C.amber} strokeWidth="1.1" />
               ) : (
                 <>
-                  <circle cx={x} cy={y} r="3.3" fill="none" stroke={C.grey} strokeWidth="0.9" />
-                  <text x={x} y={y + 1.7} textAnchor="middle" fontSize="4.6" fontWeight="700" fontFamily={mono} fill={C.grey}>
+                  <circle cx={x} cy={y} r="3.3" fill={role || "none"} stroke={role || (st.type === "pins_site" ? C.cyan : C.grey)} strokeWidth="0.9" />
+                  <text x={x} y={y + 1.7} textAnchor="middle" fontSize="4.6" fontWeight="700" fontFamily={mono} fill={role ? C.bg : st.type === "pins_site" ? C.cyan : C.grey}>
                     H
                   </text>
                 </>
@@ -1936,327 +1928,410 @@ function IfrMap({ sel, needAlts, onTap, note }) {
         })}
         <g pointerEvents="none">
           {Object.entries(labels).map(([id, p]) => {
-            const role = roleOf(id);
             const st = get(id).st;
+            const role = roleOf(id);
             return (
-              <text
-                key={id}
-                data-label={id}
-                x={p.x}
-                y={p.y}
-                textAnchor={p.anchor}
-                fontSize={p.fs}
-                fontWeight={role ? 700 : 500}
-                fontFamily={mono}
-                fill={role || C.grey}
-                opacity={st.type === "hospital" && !role ? 0.9 : 1}
-              >
-                {st.type === "hospital" ? st.short : st.icao}
+              <text key={id} data-label={id} x={p.x} y={p.y} textAnchor={p.anchor} fontSize={p.fs} fontWeight={role ? 700 : 500} fontFamily={mono} fill={role || C.grey} opacity={small(st) && !role ? 0.9 : 1}>
+                {text(st)}
               </text>
             );
           })}
         </g>
       </svg>
       <div style={{ color: note ? C.amber : C.grey, fontFamily: mono, fontSize: 10, lineHeight: 1.6, marginTop: 6, minHeight: 16 }}>
-        {note ||
-          [
-            legend("●", C.green, "ORIGIN"),
-            legend("●", C.cyan, "DEST"),
-            legend("●", C.amber, "ALTN"),
-            legend("○", C.cyan, "AIRFIELD"),
-            legend("◇", C.amber, "REFUEL"),
-            legend("Ⓗ", C.grey, "HOSPITAL (TAP FOR NAME)"),
-          ].map((el, i) => <span key={i}>{el}</span>)}
+        {note || [
+          legend("●", C.green, "START"),
+          legend("●", C.cyan, "STOP"),
+          legend("●", C.amber, "ALTN"),
+          legend("○", C.cyan, "AIRFIELD"),
+          legend("Ⓗ", C.cyan, "PinS SITE"),
+          legend("◇", C.amber, "REFUEL"),
+          legend("Ⓗ", C.grey, "HOSPITAL"),
+        ]}
       </div>
     </div>
   );
 }
 
 function IfrFuel() {
-  const [origin, setOrigin] = useState("");
-  const [dest, setDest] = useState("");
-  const [alt1, setAlt1] = useState("");
-  const [alt2, setAlt2] = useState("");
-  const [scenario, setScenario] = useState("B");
-  const [fob, setFob] = useState("");
-  const [startTaxi, setStartTaxi] = useState(String(AC.start_taxi_default_kg));
-  const [apps, setApps] = useState(null); // null = scenario default
-  const [disc, setDisc] = useState("");
+  const [trip, setTripState] = useState(loadTrip);
+  const [open, setOpen] = useState([]);
   const [mapNote, setMapNote] = useState("");
+  const [confirmReset, setConfirmReset] = useState(false);
 
-  const needAlts = scenario === "D" ? 2 : scenario === "B" || scenario === "C" ? 1 : 0;
-  const approaches = apps === null ? defaultApproaches(scenario) : apps;
+  // Every change goes through here: normalise, persist under the planner's own key.
+  const update = (fn) =>
+    setTripState((prev) => {
+      const draft = JSON.parse(JSON.stringify(prev));
+      fn(draft);
+      const next = planner.normalizeTrip(draft);
+      try {
+        localStorage.setItem(TRIP_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
 
-  const r = computeFuel({
-    origin,
-    dest,
-    alts: [alt1, alt2],
-    scenario,
-    fob: fob === "" ? null : parseNum(fob),
-    startTaxi: startTaxi === "" ? 0 : parseNum(startTaxi),
-    approaches,
-    discretionary: disc === "" ? 0 : parseNum(disc),
-  });
+  const r = planner.computeTrip(trip);
+  const n = trip.stops.length;
+  const stopSites = planner.stopSites();
 
-  const pickOrigin = (id) => {
-    setMapNote("");
-    setOrigin(id);
-    if (dest === id) setDest("");
+  const changeStop = (i, v) =>
+    update((t) => {
+      t.stops[i] = v;
+      t.refuel[i] = false;
+      if (i > 0) {
+        // a new destination resets that sector's alternate(s) and profile to defaults
+        t.alt[i - 1] = null;
+        t.alt2[i - 1] = null;
+        t.scen[i - 1] = null;
+      }
+    });
+  const setActual = (i, v) => update((t) => (t.actual[i] = SAN.int(v)));
+  const toggleRefuel = (i) =>
+    update((t) => {
+      t.refuel[i] = !t.refuel[i];
+      t.actual[i] = "";
+    });
+  const removeStop = (i) => {
+    update((t) => {
+      t.stops.splice(i, 1);
+      t.actual.splice(i, 1);
+      t.refuel.splice(i, 1);
+      const m = t.stops.length - 1;
+      t.scen = Array(m).fill(null);
+      t.alt = Array(m).fill(null);
+      t.alt2 = Array(m).fill(null);
+    });
+    setOpen([]);
   };
-  const pickDest = (id) => {
+  const addSector = () =>
+    update((t) => {
+      t.stops.push("EGKK");
+      t.actual.push("");
+      t.refuel.push(false);
+      t.scen.push(null);
+      t.alt.push(null);
+      t.alt2.push(null);
+    });
+  const resetTrip = () => {
+    update((t) => Object.assign(t, freshTrip()));
+    setOpen([]);
+    setConfirmReset(false);
     setMapNote("");
-    setDest(id);
-    if (alt1 === id) setAlt1("");
-    if (alt2 === id) setAlt2("");
   };
+  const toggleOpen = (i) => setOpen((o) => Object.assign([...o], { [i]: !o[i] }));
   const tapMap = (id) => {
-    const res = tapSite({ origin, dest, alt1, alt2 }, id, needAlts);
-    setOrigin(res.sel.origin);
-    setDest(res.sel.dest);
-    setAlt1(res.sel.alt1);
-    setAlt2(res.sel.alt2);
-    setMapNote(res.note);
-  };
-  // Functional update so rapid taps always register (no stale render-time count).
-  const stepApproaches = (delta) =>
-    setApps((prev) => Math.min(9, Math.max(0, (prev === null ? defaultApproaches(scenario) : prev) + delta)));
-  const pickScenario = (id) => {
-    setScenario(id);
-    setApps(null);
-    // Reset alternates the new scenario doesn't use, so nothing stale stays selected or
-    // coloured: D → B/C drops alternate 2; B/C/D → A/VMC drops both.
-    const keep = id === "D" ? 2 : id === "B" || id === "C" ? 1 : 0;
-    if (keep < 2) setAlt2("");
-    if (keep < 1) setAlt1("");
-    setMapNote("");
+    const st = FUEL_DATA.sites.find((x) => x.id === id);
+    setMapNote(st ? siteCaption(st) : "");
   };
 
+  const k = { display: "block", fontFamily: mono, fontSize: 8, letterSpacing: "0.13em", color: C.grey, marginBottom: 3 };
+  const v = { fontFamily: mono, fontSize: 15, fontWeight: 700 };
   const selectStyle = {
-    ...inputStyle(14),
-    ...inputWell(),
-    display: "block",
-    padding: "8px 10px",
+    ...inputStyle(13),
+    flex: 1,
+    minWidth: 0,
+    background: C.inputBg,
+    border: `1px solid ${C.edge}`,
+    borderRadius: 6,
+    padding: "6px 8px",
+    fontWeight: 700,
     appearance: "none",
     WebkitAppearance: "none",
     cursor: "pointer",
   };
-  const siteSelect = (lab, value, onChange, sites, right, info = false) => (
-    <label key={lab} style={{ display: "block" }}>
-      <span style={{ ...label(), display: "flex", justifyContent: "space-between", fontSize: 10, marginBottom: 4 }}>
-        <span>{lab}</span>
-        <span style={{ color: C.cyan }}>{right}</span>
-      </span>
-      <select value={value} onChange={(e) => onChange(e.target.value)} style={selectStyle}>
-        <option value="">SELECT</option>
-        {sites.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.icao} {s.name.toUpperCase()}
-          </option>
-        ))}
-      </select>
-      {info && value && approachSummary(value).length > 0 && (
-        <div
-          data-approaches={value}
-          style={{ marginTop: 5, fontFamily: mono, fontSize: 10.5, lineHeight: 1.5, color: C.white }}
-        >
-          <span style={{ color: C.grey, letterSpacing: "0.1em", marginRight: 6 }}>APPROACHES</span>
-          {approachSummary(value).join(" · ")}
+  const pill = (on) => ({
+    fontFamily: mono,
+    fontSize: 8,
+    letterSpacing: "0.1em",
+    color: on ? C.bg : C.grey,
+    background: on ? C.cyan : "transparent",
+    border: `1px solid ${on ? C.cyan : C.edge}`,
+    borderRadius: 10,
+    padding: "4px 8px",
+    whiteSpace: "nowrap",
+    cursor: "pointer",
+    fontWeight: on ? 700 : 500,
+  });
+
+  const head = r.headline;
+  const headBad = head.entered && head.margin !== null && head.margin < 0;
+  const headColor = !head.entered ? C.cyan : headBad ? C.amber : C.green;
+
+  const card = (i) => {
+    const st = stopSites.find((x) => x.id === trip.stops[i]) || FUEL_DATA.sites.find((x) => x.id === trip.stops[i]);
+    const last = i === n - 1;
+    const mid = i > 0 && !last;
+    const rf = r.refuelAt[i];
+    const gate = last ? null : r.sec[i].gate;
+    const margin = last || (i === 0 && !r.headline.entered) ? null : r.margin[i];
+    const warn = !last && margin !== null && margin < 0;
+    const status = planner.planStatus(st);
+    return (
+      <div
+        key={`stop-${i}`}
+        data-stop={i}
+        style={{ background: C.inputBg, border: `1px solid ${warn ? C.amber : rf ? C.cyan : C.edge}`, borderRadius: 8, padding: "9px 11px" }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <select aria-label={`stop ${i + 1}`} value={st.id} onChange={(e) => changeStop(i, e.target.value)} style={selectStyle}>
+            {stopSites.map((x) => (
+              <option key={x.id} value={x.id}>
+                {siteName(x)}
+              </option>
+            ))}
+          </select>
+          {status && (
+            <span data-status style={{ ...pill(false), cursor: "default", color: C.amber, borderColor: C.amber + "80" }}>
+              {status.toUpperCase()}
+            </span>
+          )}
+          {mid && planner.hasFuel(st) && (
+            <button data-refuel={i} onClick={() => toggleRefuel(i)} aria-pressed={rf} style={pill(rf)}>
+              REFUEL HERE
+            </button>
+          )}
+          {n > 2 && (
+            <button data-remove={i} aria-label={`remove stop ${i + 1}`} onClick={() => removeStop(i)} style={{ ...miniBtn(C.grey), padding: "3px 8px", fontSize: 12 }}>
+              ✕
+            </button>
+          )}
         </div>
-      )}
-    </label>
-  );
-
-  const dests = destSites().filter((s) => s.id !== origin);
-  const alts1 = destSites().filter((s) => s.id !== dest && s.id !== alt2);
-  const alts2 = destSites().filter((s) => s.id !== dest && s.id !== alt1);
-
-  const numInput = (value, onChange, width = 56) => (
-    <input
-      value={value}
-      inputMode="numeric"
-      onChange={(e) => onChange(SAN.int(e.target.value))}
-      style={{
-        ...inputStyle(13),
-        flex: "none",
-        width,
-        textAlign: "right",
-        background: C.inputBg,
-        border: `1px solid ${C.edge}`,
-        borderRadius: 4,
-        padding: "3px 6px",
-        boxSizing: "border-box",
-      }}
-    />
-  );
-
-  const cols = { display: "grid", gridTemplateColumns: "24px 1fr 46px 60px", gap: 6, alignItems: "center" };
-  const cell = { fontFamily: mono, fontSize: 12, fontWeight: 600, color: C.white };
-  const num = { ...cell, textAlign: "right" };
-  const rowBox = { ...cols, padding: "7px 0", borderBottom: `1px solid ${C.edge}` };
-  const stepBtn = { ...miniBtn(C.cyan), padding: "2px 10px", fontSize: 13, lineHeight: 1.2 };
-
-  const lineRow = (ln) => (
-    <div key={ln.key} style={rowBox} data-line={ln.key}>
-      <span style={{ ...cell, color: C.grey }}>{ln.serial}</span>
-      <div style={cell}>
-        <div>{ln.label}</div>
-        {ln.sub && <div style={{ color: C.grey, fontWeight: 500, fontSize: 10, lineHeight: 1.4, marginTop: 2 }}>{ln.sub}</div>}
-        {ln.key === "approaches" && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 5 }}>
-            <button aria-label="fewer approaches" onClick={() => stepApproaches(-1)} style={stepBtn}>
-              −
-            </button>
-            <span style={{ color: C.cyan, minWidth: 14, textAlign: "center" }}>{ln.count}</span>
-            <button aria-label="more approaches" onClick={() => stepApproaches(1)} style={stepBtn}>
-              +
-            </button>
-            <span style={{ color: C.grey, fontWeight: 500 }}>× {AC.per_ifr_approach_kg}</span>
+        {!last ? (
+          <div style={{ display: "flex", gap: 8, marginTop: 9 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <span style={k}>MIN TO LIFT</span>
+              <span data-min={i} style={{ ...v, color: C.white }}>
+                {gate === null ? "—" : gate}
+              </span>
+            </div>
+            <label style={{ flex: 1, minWidth: 0 }}>
+              <span style={k}>{rf ? "AFTER REFUEL KG" : "ACTUAL KG"}</span>
+              <input
+                className="ifr-actual"
+                data-actual={i}
+                value={trip.actual[i]}
+                inputMode="numeric"
+                placeholder={i === 0 ? "" : rf ? (gate === null ? "" : `≥ ${gate}`) : r.planned[i] === null ? "" : `plan ${r.planned[i]}`}
+                onChange={(e) => setActual(i, e.target.value)}
+                style={{
+                  ...inputStyle(15),
+                  width: "100%",
+                  boxSizing: "border-box",
+                  background: C.bg,
+                  border: `1px solid ${C.cyan}`,
+                  borderRadius: 5,
+                  padding: "3px 6px",
+                  fontWeight: 700,
+                }}
+              />
+            </label>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <span style={k}>MARGIN</span>
+              <span data-margin={i} style={{ ...v, color: margin === null ? C.grey : margin < 0 ? C.amber : C.green }}>
+                {margin === null ? "—" : signed(margin)}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div style={{ marginTop: 9 }}>
+            <span style={k}>PLANNED ON LANDING</span>
+            <span data-landing style={{ ...v, color: r.landing === null ? C.grey : r.landing < AC.final_reserve_ifr_kg ? C.amber : C.grey }}>
+              {r.landing === null ? "—" : `${r.landing} KG`}
+            </span>
+          </div>
+        )}
+        {rf && r.planned[i] !== null && (
+          <div data-refuel-msg style={{ marginTop: 8, fontFamily: mono, fontSize: 9.5, lineHeight: 1.5, color: C.cyan }}>
+            FUEL STOP — ARRIVE WITH {r.planned[i]} KG
+            {r.uplift[i] === undefined ? "" : r.uplift[i] > 0 ? ` · UPLIFT AT LEAST ${r.uplift[i]} KG` : " · NO UPLIFT NEEDED TO CONTINUE"}
+          </div>
+        )}
+        {warn && (
+          <div data-warn={i} style={{ marginTop: 8, fontFamily: mono, fontSize: 9.5, lineHeight: 1.5, color: C.amber, fontWeight: 600 }}>
+            BELOW MINIMUM — IFR DEPARTURE NOT AVAILABLE. REFUEL BEFORE CONTINUING, OR HOLD FOR WEATHER.
           </div>
         )}
       </div>
-      <span style={{ ...num, color: C.grey }}>{ln.l === null ? "—" : ln.l}</span>
-      {ln.key === "startTaxi" ? (
-        numInput(startTaxi, setStartTaxi)
-      ) : ln.key === "discretionary" ? (
-        numInput(disc, setDisc)
-      ) : (
-        <span style={num}>{ln.kg === null ? "—" : ln.kg}</span>
-      )}
-    </div>
-  );
+    );
+  };
 
-  const verdict = (() => {
-    if (r.incomplete === "route") return { text: "SELECT ORIGIN AND DESTINATION", color: C.grey, size: 12 };
-    if (r.incomplete === "alternate")
-      return { text: needAlts === 2 ? "SELECT BOTH ALTERNATES" : "SELECT ALTERNATE", color: C.grey, size: 12 };
-    if (r.incomplete) return { text: "CHECK SELECTIONS", color: C.grey, size: 12 };
-    if (r.verdict === null) return { text: "ENTER FUEL ON BOARD", color: C.grey, size: 12 };
-    return r.verdict === "ENOUGH"
-      ? { text: `ENOUGH ${signed(r.margin)} KG`, color: C.green, size: 22 }
-      : { text: `SHORT ${r.margin} KG`, color: C.amber, size: 22 };
-  })();
+  const sector = (i) => {
+    const s = r.sec[i];
+    const noAlt = s.needAlts === 0;
+    const altTxt = noAlt ? "NO ALTN" : s.error ? "NO VALID ALTN" : "ALTN " + s.a1.id + (s.needAlts === 2 ? "+" + s.a2.id : "");
+    const isOpen = !!open[i];
+    const cols = { display: "grid", gridTemplateColumns: "1.05fr 1.6fr 34px 40px", gap: 4, alignItems: "baseline" };
+    const cell = { fontFamily: mono, fontSize: 10, color: C.white, padding: "4px 0" };
+    const altPick = (lab, key, value, list, distTo, extra) => (
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: mono, fontSize: 9, letterSpacing: "0.1em", color: C.grey, marginBottom: 6 }}>
+        <span style={{ minWidth: 62 }}>{lab}</span>
+        <select data-alt-picker={key} value={value} onChange={(e) => update((t) => (t[key][i] = e.target.value))} style={{ ...selectStyle, color: C.amber, fontSize: 11 }}>
+          {list.map((x) => (
+            <option key={x.id} value={x.id}>
+              {siteName(x)}
+            </option>
+          ))}
+        </select>
+        <span style={{ letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
+          {extra ? `${extra} · ` : ""}
+          {Math.round(distTo)} nm
+        </span>
+      </label>
+    );
+    return (
+      <div key={`sec-${i}`} data-sector={i} style={{ marginLeft: 14, borderLeft: `1px solid ${C.edge}`, padding: "8px 0 8px 12px" }}>
+        <button
+          data-sector-line={i}
+          onClick={() => toggleOpen(i)}
+          aria-expanded={isOpen}
+          style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: mono, fontSize: 10, color: C.grey, textAlign: "left" }}
+        >
+          <span>
+            → {s.to.id} · {Math.round(s.dist)} nm · <span style={{ color: C.cyan, fontWeight: 700 }}>{s.sc}</span> · {altTxt}
+          </span>
+          <span style={{ whiteSpace: "nowrap" }}>
+            <b style={{ color: C.white }}>{s.burn} KG</b>
+            <span style={{ marginLeft: 8 }}>{isOpen ? "▴" : "▾"}</span>
+          </span>
+        </button>
+        {isOpen && (
+          <div data-detail={i} style={{ marginTop: 9 }}>
+            <div style={{ display: "flex", gap: 5 }}>
+              {SCENARIO_ORDER.map((c) => {
+                const ok = s.profile.allowed.includes(c);
+                const on = c === s.sc;
+                return (
+                  <button
+                    key={c}
+                    data-chip={`${i}:${c}`}
+                    disabled={!ok}
+                    aria-pressed={on}
+                    aria-label={`Profile ${c}: ${SCENARIO_HINT[c].join(", ")}${ok ? "" : " (not offered)"}`}
+                    onClick={() => ok && update((t) => (t.scen[i] = c))}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      background: C.inputBg,
+                      border: `1px solid ${on ? C.cyan : C.edge}`,
+                      borderRadius: 5,
+                      padding: "5px 0 4px",
+                      color: on ? C.cyan : C.grey,
+                      fontFamily: mono,
+                      cursor: ok ? "pointer" : "default",
+                      opacity: ok ? 1 : 0.3,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                    }}
+                  >
+                    <span style={{ fontSize: 12, fontWeight: 700 }}>{c}</span>
+                    {SCENARIO_HINT[c].map((h) => (
+                      <span key={h} style={{ fontSize: 7, fontWeight: 600, lineHeight: 1.3 }}>
+                        {h}
+                      </span>
+                    ))}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ fontFamily: mono, fontSize: 9.5, color: C.grey, lineHeight: 1.5, margin: "7px 0 9px", borderLeft: `2px solid ${C.edge}`, paddingLeft: 8 }}>
+              {SCENARIO_TEXT[s.sc]}
+              {s.profile.key === "pins" && <span style={{ opacity: 0.75 }}> {PINS_NOTE}</span>}
+            </div>
+            <div data-approaches={s.to.id} style={{ fontFamily: mono, fontSize: 9.5, lineHeight: 1.5, color: C.white, marginBottom: 6 }}>
+              <span style={{ color: C.grey, letterSpacing: "0.1em", marginRight: 6 }}>APPROACHES {s.to.id}</span>
+              {approachSummary(s.to.id).join(" · ") || "NONE LISTED"}
+            </div>
+            {!noAlt && !s.error && (
+              <>
+                {altPick("ALTERNATE", "alt", s.a1.id, s.list, haversineNm(s.to, s.a1), s.auto ? "nearest" : "chosen")}
+                {s.needAlts === 2 && altPick("2ND ALTN", "alt2", s.a2.id, s.list.filter((x) => x !== s.a1), haversineNm(s.to, s.a2))}
+                {[s.a1, ...(s.needAlts === 2 ? [s.a2] : [])].map((a) => (
+                  <div key={a.id} data-approaches={a.id} style={{ fontFamily: mono, fontSize: 9.5, lineHeight: 1.5, color: C.white, marginBottom: 4 }}>
+                    <span style={{ color: C.grey, letterSpacing: "0.1em", marginRight: 6 }}>APPROACHES {a.id}</span>
+                    {approachSummary(a.id).join(" · ")}
+                  </div>
+                ))}
+              </>
+            )}
+            <div style={{ marginTop: 6 }}>
+              <div style={{ ...cols, borderBottom: `1px solid ${C.edge}` }}>
+                {[`MIN TO LIFT ${s.from.id}`, "REQUIREMENT", "L", "KG"].map((h, j) => (
+                  <span key={h} style={{ fontFamily: mono, fontSize: 7.5, letterSpacing: "0.12em", color: C.grey, padding: "3px 0", textAlign: j >= 2 ? "right" : "left" }}>
+                    {h}
+                  </span>
+                ))}
+              </div>
+              {s.rows.map((row, j) => (
+                <div key={j} data-row={`${i}:${j}`} style={{ ...cols, borderBottom: `1px solid ${C.edge}55` }}>
+                  <span style={cell}>{row.item}</span>
+                  <span style={{ ...cell, color: C.grey, fontSize: 9 }}>{row.req}</span>
+                  <span style={{ ...cell, textAlign: "right", color: C.grey }}>{row.kg === null ? "—" : kgToL(row.kg)}</span>
+                  <span style={{ ...cell, textAlign: "right", color: C.cyan, fontWeight: 600 }}>{row.kg === null ? "—" : row.kg}</span>
+                </div>
+              ))}
+              <div data-row-total={i} style={cols}>
+                <span style={{ ...cell, fontWeight: 700 }}>MIN TO LIFT</span>
+                <span />
+                <span style={{ ...cell, textAlign: "right", fontWeight: 700 }}>{s.gate === null ? "—" : kgToL(s.gate)}</span>
+                <span style={{ ...cell, textAlign: "right", fontWeight: 700 }}>{s.gate === null ? "—" : s.gate}</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <>
-      <PanelHeader title="IFR FUEL" subtitle="AW169 CROSS-CHECK" />
+      <style>{`.ifr-actual::placeholder { color: ${C.grey}; opacity: 0.55; font-weight: 500; text-transform: none; }`}</style>
+      <PanelHeader title="IFR FUEL" subtitle="AW169 · OMB34" />
+      <IfrMap result={r} note={mapNote} onTap={tapMap} />
 
-      <IfrMap sel={{ origin, dest, alt1, alt2 }} needAlts={needAlts} onTap={tapMap} note={mapNote} />
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
-        {siteSelect("ORIGIN", origin, pickOrigin, originSites())}
-        {siteSelect("DESTINATION", dest, pickDest, dests, r.tripNm !== null ? `${r.tripNm} NM` : "", true)}
-        {needAlts >= 1 &&
-          siteSelect(
-            needAlts === 2 ? "ALTERNATE 1" : "ALTERNATE",
-            alt1,
-            setAlt1,
-            alts1,
-            r.altLegs.length >= 1 ? `${r.altLegs[0]} NM` : "",
-            true
-          )}
-        {needAlts === 2 &&
-          siteSelect(
-            "ALTERNATE 2",
-            alt2,
-            setAlt2,
-            alts2,
-            r.altLegs.length === 2 ? `${r.altLegs[1]} NM FROM ${siteById(alt1).icao}` : "",
-            true
-          )}
-      </div>
-
-      <span style={{ ...label(), fontSize: 10, marginBottom: 4 }}>SCENARIO</span>
-      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-        {SCENARIO_ORDER.map((id) => (
-          <button
-            key={id}
-            data-scenario={id}
-            onClick={() => pickScenario(id)}
-            aria-pressed={scenario === id}
-            aria-label={`Scenario ${id}: ${SCENARIO_HINT[id].join(", ")}`}
-            style={{
-              flex: 1,
-              minWidth: 0,
-              background: scenario === id ? C.inputBg : "transparent",
-              border: `1px solid ${scenario === id ? C.cyan : C.edge}`,
-              borderRadius: 6,
-              color: scenario === id ? C.cyan : C.grey,
-              fontFamily: mono,
-              padding: "7px 0 6px",
-              cursor: "pointer",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 1,
-            }}
-          >
-            <span style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2 }}>{id}</span>
-            {SCENARIO_HINT[id].map((h) => (
-              <span key={h} style={{ fontSize: 8, fontWeight: 600, letterSpacing: "0.02em", lineHeight: 1.25, opacity: scenario === id ? 1 : 0.75 }}>
-                {h}
-              </span>
-            ))}
-          </button>
-        ))}
-      </div>
-      <div style={{ color: C.grey, fontFamily: mono, fontSize: 11, lineHeight: 1.5, marginBottom: 16, minHeight: 50 }}>
-        {SCENARIO_TEXT[scenario]}
-      </div>
-
-      <label style={{ display: "block", marginBottom: 16 }}>
-        <span style={{ ...label(), fontSize: 10, marginBottom: 4 }}>FUEL ON BOARD KG</span>
-        <input
-          value={fob}
-          inputMode="numeric"
-          onChange={(e) => setFob(SAN.int(e.target.value))}
-          style={{ ...inputStyle(16), ...inputWell(), display: "block", padding: "8px 10px" }}
-        />
-      </label>
-
-      {r.lines.length > 0 && r.incomplete !== "route" && (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ ...cols, paddingBottom: 6, borderBottom: `1px solid ${C.edge}` }}>
-            {["#", "REQUIREMENT", "L", "KG"].map((h, i) => (
-              <span key={h} style={{ ...label(), fontSize: 9, margin: 0, textAlign: i >= 2 ? "right" : "left" }}>
-                {h}
-              </span>
-            ))}
-          </div>
-          {r.lines.map(lineRow)}
-          {r.required !== null && (
-            <div style={{ ...cols, padding: "9px 0 0" }} data-line="required">
-              <span />
-              <span style={{ ...cell, fontWeight: 700 }}>REQUIRED</span>
-              <span style={{ ...num, color: C.grey }}>{Math.round(r.required / AC.fuel_density_kg_per_l)}</span>
-              <span style={{ ...num, fontWeight: 700 }}>{r.required}</span>
-            </div>
-          )}
+      <div data-headline style={{ border: `1px solid ${headBad ? C.amber : C.green}80`, borderRadius: 8, padding: "11px 13px", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <span style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", color: C.grey }}>REQUIRED TO LIFT {head.site}</span>
+          <span style={{ fontFamily: mono, fontSize: 20, fontWeight: 700, color: headColor }}>{head.gate === null ? "—" : `${head.gate} KG`}</span>
         </div>
-      )}
-
-      <div
-        data-verdict
-        style={{
-          textAlign: "center",
-          fontFamily: mono,
-          fontWeight: 700,
-          letterSpacing: "0.1em",
-          fontSize: verdict.size,
-          color: verdict.color,
-          padding: "14px 10px",
-          border: `1px solid ${verdict.color === C.grey ? C.edge : verdict.color + "80"}`,
-          borderRadius: 8,
-          marginBottom: 12,
-        }}
-      >
-        {verdict.text}
+        <div data-verdict style={{ marginTop: 6, fontFamily: mono, fontSize: 10.5, fontWeight: 600, textAlign: "right", color: !head.entered ? C.grey : headBad ? C.amber : C.green }}>
+          {!head.entered || head.margin === null ? `ENTER FUEL AT ${head.site}` : headBad ? `SHORT ${head.margin} KG` : `ENOUGH ${signed(head.margin)} KG`}
+        </div>
       </div>
 
-      {r.flags.map((f) => (
-        <div key={f} style={{ color: C.amber, fontFamily: mono, fontSize: 11, lineHeight: 1.5, marginBottom: 6 }}>
-          ⚠ {f.toUpperCase()}
+      <div style={{ fontFamily: mono, fontSize: 8, letterSpacing: "0.15em", color: C.grey, margin: "0 2px 8px" }}>
+        TRIP — MINIMUM FUEL TO LIFT FROM EACH SITE
+      </div>
+      {trip.stops.map((_, i) => (
+        <div key={i}>
+          {card(i)}
+          {i < n - 1 && sector(i)}
         </div>
       ))}
+
+      <button
+        data-add-sector
+        onClick={addSector}
+        style={{ width: "100%", marginTop: 10, border: `1px dashed ${C.cyan}`, borderRadius: 8, background: "transparent", fontFamily: mono, fontSize: 10, letterSpacing: "0.14em", color: C.cyan, padding: "10px 0", cursor: "pointer" }}
+      >
+        + ADD SECTOR
+      </button>
+      {!confirmReset ? (
+        <button data-reset onClick={() => setConfirmReset(true)} style={{ ...btnStyle(C.grey), marginTop: 8, padding: "8px 0", fontSize: 10 }}>
+          RESET TRIP
+        </button>
+      ) : (
+        <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
+          <span style={{ flex: 1.4, fontFamily: mono, fontSize: 9.5, color: C.amber, lineHeight: 1.4 }}>RESET TO THE DEFAULT TRIP? CLEARS STOPS AND FUEL ENTERED.</span>
+          <button data-reset-confirm onClick={resetTrip} style={{ ...btnStyle(C.amber), padding: "8px 0", fontSize: 10 }}>
+            RESET
+          </button>
+          <button data-reset-cancel onClick={() => setConfirmReset(false)} style={{ ...btnStyle(C.grey), padding: "8px 0", fontSize: 10 }}>
+            CANCEL
+          </button>
+        </div>
+      )}
 
       <p style={{ marginTop: 14, marginBottom: 0, color: C.grey, fontSize: 10.5, lineHeight: 1.6, fontFamily: mono }}>
         Planning cross-check only — not a certified flight-planning tool. Verify against the OFP and current plates.

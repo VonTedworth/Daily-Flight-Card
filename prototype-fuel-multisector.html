@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE — IFR Fuel, multi-sector v2</title>
+<style>
+  body { margin:0; background:#05080b; display:flex; justify-content:center; padding:16px;
+         font-family:"IBM Plex Mono","SF Mono",Menlo,monospace; color:#e8eef3; }
+  .shell { width:100%; max-width:460px; }
+  .banner { border:1px dashed #ffb347; color:#ffb347; border-radius:8px; padding:8px 12px;
+            font-size:10px; letter-spacing:.06em; margin-bottom:12px; text-align:center; line-height:1.5; }
+  .panel { background:#10161d; border:1px solid #1c2733; border-radius:12px; padding:16px; }
+  .phead { display:flex; justify-content:space-between; align-items:baseline;
+           border-bottom:1px solid #1c2733; padding-bottom:10px; margin-bottom:14px; }
+  .phead .t { font-size:15px; font-weight:700; letter-spacing:.22em; }
+  .phead .s { color:#8fa3b3; font-size:10px; letter-spacing:.12em; }
+
+  .lift { border:1px solid #4ade80; border-radius:8px; padding:11px 13px; margin-bottom:16px; }
+  .lift.bad { border-color:#ffb347; }
+  .lift .row { display:flex; justify-content:space-between; align-items:baseline; }
+  .lift .k { font-size:9px; letter-spacing:.14em; color:#8fa3b3; }
+  .lift .big { font-size:20px; font-weight:700; }
+  .lift .sub { margin-top:6px; font-size:10px; text-align:right; }
+  .ok { color:#4ade80; } .bad { color:#ffb347; } .dim { color:#5c6b78; }
+  .lab { font-size:8px; letter-spacing:.15em; color:#8fa3b3; margin:0 2px 8px; }
+
+  .stop { background:#0a0f14; border:1px solid #1c2733; border-radius:8px; padding:9px 11px; }
+  .stop.warn { border-color:#ffb347; }
+  .stop.fuel { border-color:#39d0e8; }
+  .stop .top { display:flex; align-items:center; gap:8px; }
+  .stop .top select { flex:1; min-width:0; }
+  select { background:#0a0f14; color:#39d0e8; border:1px solid #1c2733; border-radius:6px;
+           font-family:inherit; font-size:13px; font-weight:700; padding:5px 6px; }
+  .x { color:#5c6b78; border:1px solid #1c2733; border-radius:6px; padding:3px 8px; font-size:12px; cursor:pointer; }
+  .pill { font-size:8px; letter-spacing:.1em; color:#8fa3b3; border:1px solid #1c2733; border-radius:10px;
+          padding:4px 8px; cursor:pointer; white-space:nowrap; }
+  .pill.on { color:#05080b; background:#39d0e8; border-color:#39d0e8; font-weight:700; }
+  .nums { display:flex; gap:8px; margin-top:9px; }
+  .cell { flex:1; min-width:0; }
+  .cell .k { display:block; font-size:7.5px; letter-spacing:.13em; color:#8fa3b3; margin-bottom:3px; }
+  .cell .v { font-size:15px; font-weight:700; }
+  input[type=text] { width:100%; box-sizing:border-box; background:#05080b; border:1px solid #39d0e8; border-radius:5px;
+          color:#39d0e8; font-family:inherit; font-size:15px; font-weight:700; padding:3px 6px; }
+  input::placeholder { color:#3f5563; }
+  .msg { margin-top:8px; font-size:9px; line-height:1.5; }
+
+  .sector { margin-left:14px; border-left:1px solid #1c2733; padding:8px 0 8px 12px; }
+  .sline { display:flex; justify-content:space-between; align-items:center; font-size:10px; color:#9fb2c0; cursor:pointer; }
+  .sline b { color:#e8eef3; white-space:nowrap; }
+  .sline .sc { color:#39d0e8; font-weight:700; }
+  .sline .chev { color:#5c6b78; margin-left:8px; }
+  .det { margin-top:9px; }
+  .chips { display:flex; gap:5px; }
+  .chip { flex:1; text-align:center; font-size:10px; font-weight:700; color:#8fa3b3; background:#0a0f14;
+          border:1px solid #1c2733; border-radius:5px; padding:6px 0; cursor:pointer; }
+  .chip.on { border-color:#39d0e8; color:#39d0e8; }
+  .chip.off { opacity:.3; cursor:default; }
+  .desc { font-size:9px; color:#9fb2c0; line-height:1.5; margin:7px 0 9px; border-left:2px solid #1c2733; padding-left:8px; }
+  .altrow { display:flex; align-items:center; gap:8px; font-size:9px; color:#8fa3b3; letter-spacing:.1em; margin-bottom:5px; }
+  .altrow select { font-size:11px; color:#ffb347; }
+  .altrow .auto { color:#5c6b78; letter-spacing:.04em; }
+
+  table { width:100%; border-collapse:collapse; margin-top:6px; }
+  th { font-size:7.5px; letter-spacing:.12em; color:#8fa3b3; text-align:left; font-weight:400;
+       border-bottom:1px solid #1c2733; padding:3px 5px; }
+  th.num, td.num { text-align:right; }
+  td { font-size:10px; padding:4px 5px; border-bottom:1px solid #141c24; color:#c7d3dc; }
+  td.req { color:#8fa3b3; font-size:9px; }
+  td.kg { color:#39d0e8; font-weight:600; }
+  tr.tot td { border-top:1px solid #1c2733; border-bottom:none; font-weight:700; color:#e8eef3; }
+
+  .add { margin-top:10px; border:1px dashed #39d0e8; border-radius:8px; text-align:center;
+         font-size:10px; letter-spacing:.14em; color:#39d0e8; padding:10px 0; cursor:pointer; }
+  .note { margin-top:12px; font-size:8.5px; color:#5c6b78; line-height:1.6; border-top:1px solid #141c24; padding-top:8px; }
+  .whatif { display:flex; align-items:center; gap:8px; margin-top:10px; font-size:9px; color:#8fa3b3; letter-spacing:.06em; cursor:pointer; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="banner">WORKING PROTOTYPE — FOR DESIGN REVIEW ONLY · STRAIGHT-LINE DISTANCES · NOT FOR PLANNING</div>
+  <div class="panel">
+    <div class="phead"><span class="t">IFR FUEL PLANNER</span><span class="s">AW169 · OMB34</span></div>
+    <div id="app"></div>
+    <label class="whatif"><input type="checkbox" id="whh"> WHAT IF: FUEL AVAILABLE AT WILLIAM HARVEY</label>
+    <div class="note">Tap a sector line for its weather profile, alternate and table. REFUEL HERE appears at any stop that has fuel.<br>
+    Each minimum = this sector + the minimum at the next site, or this sector's own alternate + reserve if that is higher. A refuel stop breaks the chain.</div>
+  </div>
+</div>
+
+<script>
+// OMB34 figures
+const SPEED=130, BURN=280, TAXI=30, APP=70, RESERVE=150, DENS=0.79, ADD15=Math.round(15/60*BURN);
+
+// nonGnss: has an approach that does not rely on GNSS. twoApp: two approaches on independent aids.
+const SITES = [
+  {id:"EGKR", name:"Redhill",            lat:51.2136, lon:-0.1386, kind:"PinS", fuel:true},
+  {id:"EGKD", name:"William Harvey",     lat:51.1360, lon:0.9000,  kind:"PinS"},
+  {id:"EGKC", name:"King's College",     lat:51.4680, lon:-0.0940, kind:"PinS"},
+  {id:"EGRS", name:"Royal Sussex",       lat:50.8190, lon:-0.1170, kind:"PinS"},
+  {id:"EGGB", name:"East Brighton Park", lat:50.8174, lon:-0.1018, kind:"PinS"},
+  {id:"EGKK", name:"Gatwick",     lat:51.1481, lon:-0.1903, kind:"ILS", fuel:true, altn:true, nonGnss:true, twoApp:true},
+  {id:"EGKB", name:"Biggin Hill", lat:51.3307, lon:0.0325,  kind:"ILS", fuel:true, altn:true, nonGnss:true, twoApp:true},
+  {id:"EGKA", name:"Shoreham",    lat:50.8356, lon:-0.2972, kind:"RNP", fuel:true, altn:true},
+  {id:"EGMD", name:"Lydd",        lat:50.9561, lon:0.9394,  kind:"ILS", fuel:true, altn:true, nonGnss:true, twoApp:true},
+  {id:"EGMC", name:"Southend",    lat:51.5714, lon:0.6956,  kind:"ILS", fuel:true, altn:true, nonGnss:true, twoApp:true},
+  {id:"EGHI", name:"Southampton", lat:50.9503, lon:-1.3568, kind:"ILS", fuel:true, altn:true, nonGnss:true, twoApp:true},
+  {id:"EGLL", name:"Heathrow",    lat:51.4706, lon:-0.4619, kind:"ILS", fuel:true, altn:true, nonGnss:true, twoApp:true},
+  {id:"EGLC", name:"London City", lat:51.5053, lon:0.0553,  kind:"ILS", fuel:true, altn:true, nonGnss:true, twoApp:true},
+  {id:"EGSS", name:"Stansted",    lat:51.8850, lon:0.2350,  kind:"ILS", fuel:true, altn:true, nonGnss:true, twoApp:true}
+];
+const S = id => SITES.find(s=>s.id===id);
+
+const SCEN = {
+  VMC:"Destination forecast VMC for approach and landing, 1 hr either side of ETA. No alternate.",
+  A:"Two approaches on independent aids at the destination. Ceiling ≥ minima + 400 ft, vis ≥ 3000 m. No alternate: carry both approaches + 15 min.",
+  B:"One alternate. Alternate forecast ≥ RVR/VIS + 400 m, ceiling ≥ DH/MDH + 200 ft.",
+  C:"One alternate; destination weather from an uncertified source (e.g. SkylinkPro at a PinS site). Alternate forecast ≥ RVR/VIS + 800 m, ceiling ≥ DH/MDH + 400 ft. Same fuel as B.",
+  D:"Two alternates. Fuel planned to the farther one."
+};
+
+const state = { stops:["EGKR","EGKD","EGKC","EGKR"], actual:["820","","",""], refuel:[false,false,false,false],
+                scen:[null,null,null], alt:[null,null,null], alt2:[null,null,null], open:[false,false,false], whh:false };
+
+function nm(a,b){
+  const r=Math.PI/180, dLat=(b.lat-a.lat)*r, dLon=(b.lon-a.lon)*r;
+  const h=Math.sin(dLat/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dLon/2)**2;
+  return 2*3440.065*Math.asin(Math.sqrt(h));
+}
+const legKg = d => Math.round(d/SPEED*BURN);
+const L = kg => Math.round(kg/DENS);
+const hasFuel = s => s.fuel || (s.id==="EGKD" && state.whh);
+
+// OMA 8H: an alternate is valid only if a non-GNSS approach exists there or at the destination.
+function altList(dest){
+  return SITES.filter(s=>s.altn && s.id!==dest.id && (dest.nonGnss || s.nonGnss)).sort((a,b)=>nm(dest,a)-nm(dest,b));
+}
+function allowed(dest){
+  if(dest.kind==="PinS") return ["C","D"];              // OMA 8.3.2.7.7: alternate always carried; site weather is uncertified, so never B
+  return dest.twoApp ? ["VMC","A","B","C","D"] : ["VMC","B","C","D"];
+}
+const refuelAt = j => j>0 && j<state.stops.length-1 && state.refuel[j] && hasFuel(S(state.stops[j]));
+
+function compute(){
+  const n=state.stops.length, sec=[];
+  for(let i=0;i<n-1;i++){
+    const from=S(state.stops[i]), to=S(state.stops[i+1]);
+    const ok=allowed(to);
+    // default profile: C for PinS (uncertified site weather, one alternate), B for airfields
+    const sc=ok.includes(state.scen[i]) ? state.scen[i] : (to.kind==="PinS"?"C":"B"), list=altList(to);
+    const a1=S(state.alt[i])&&list.includes(S(state.alt[i])) ? S(state.alt[i]) : list[0];
+    const rest=list.filter(x=>x!==a1);
+    const a2=S(state.alt2[i])&&rest.includes(S(state.alt2[i])) ? S(state.alt2[i]) : rest[0];
+    const dist=nm(from,to), trip=legKg(dist), cont=Math.round(trip*0.1);
+    const burn=TAXI+trip+cont+APP;
+    const far = sc==="D" && nm(to,a2)>nm(to,a1) ? a2 : a1;
+    const altNm=nm(to,far), altKg=legKg(altNm);
+    let own;
+    if(sc==="VMC") own=burn+RESERVE;
+    else if(sc==="A") own=burn+APP+ADD15+RESERVE;
+    else own=burn+altKg+APP+RESERVE;
+    sec.push({from,to,ok,sc,list,a1,a2,far,dist,trip,cont,burn,altNm,altKg,own,auto:!state.alt[i]});
+  }
+  for(let i=sec.length-1;i>=0;i--){
+    const onward = (i<sec.length-1 && !refuelAt(i+1)) ? sec[i].burn+sec[i+1].gate : -1;
+    sec[i].useOnward = onward>sec[i].own;
+    sec[i].gate = Math.max(sec[i].own,onward);
+  }
+  const fuel=[], planned=[], uplift=[];
+  for(let i=0;i<n;i++){
+    planned[i] = i===0 ? null : fuel[i-1]-sec[i-1].burn;
+    const a=parseFloat(state.actual[i]);
+    if(!isNaN(a)) fuel[i]=a;
+    else if(i===0) fuel[i]=sec[0].gate;
+    else if(refuelAt(i)){ fuel[i]=Math.max(planned[i],sec[i].gate); uplift[i]=Math.max(0,sec[i].gate-planned[i]); }
+    else fuel[i]=planned[i];
+  }
+  return {sec,fuel,planned,uplift};
+}
+
+const opts = (sel,list) => list.map(s=>`<option value="${s.id}" ${s.id===sel?"selected":""}>${s.id} ${s.name}</option>`).join("");
+const row = (a,b,kg) => `<tr><td>${a}</td><td class="req">${b}</td><td class="num">${L(kg)}</td><td class="num kg">${kg}</td></tr>`;
+
+function render(){
+  const {sec,fuel,planned,uplift}=compute(), n=state.stops.length;
+  const m0=fuel[0]-sec[0].gate;
+  let h=`<div class="lift ${m0<0?"bad":""}">
+    <div class="row"><span class="k">REQUIRED TO LIFT ${state.stops[0]}</span><span class="big ${m0<0?"bad":"ok"}">${sec[0].gate} KG</span></div>
+    <div class="sub ${m0<0?"bad":"ok"}">${m0<0?"SHORT "+m0:"ENOUGH +"+m0} KG</div></div>
+    <div class="lab">TRIP — MINIMUM FUEL TO LIFT FROM EACH SITE</div>`;
+
+  for(let i=0;i<n;i++){
+    const site=S(state.stops[i]), last=i===n-1, mid=i>0&&!last, rf=refuelAt(i);
+    const margin=last?null:fuel[i]-sec[i].gate, warn=!last&&margin<0;
+    h+=`<div class="stop ${warn?"warn":rf?"fuel":""}">
+      <div class="top"><select data-stop="${i}">${opts(site.id,SITES)}</select>
+        ${mid&&hasFuel(site)?`<span class="pill ${rf?"on":""}" data-ref="${i}">REFUEL HERE</span>`:""}
+        ${n>2?`<span class="x" data-del="${i}">✕</span>`:""}</div>
+      <div class="nums">`;
+    if(!last){
+      h+=`<div class="cell"><span class="k">MIN TO LIFT</span><span class="v">${sec[i].gate}</span></div>
+          <div class="cell"><span class="k">${rf?"AFTER REFUEL KG":"ACTUAL KG"}</span><input type="text" inputmode="numeric" data-act="${i}" value="${state.actual[i]}" placeholder="${i===0?"":rf?"≥ "+sec[i].gate:"plan "+planned[i]}"></div>
+          <div class="cell"><span class="k">MARGIN</span><span class="v ${margin<0?"bad":"ok"}">${margin>=0?"+":""}${margin}</span></div>`;
+    } else {
+      h+=`<div class="cell"><span class="k">PLANNED ON LANDING</span><span class="v ${fuel[i]<RESERVE?"bad":"dim"}">${fuel[i]} KG</span></div>`;
+    }
+    h+=`</div>`;
+    if(rf) h+=`<div class="msg" style="color:#39d0e8">FUEL STOP — ARRIVE WITH ${planned[i]} KG${uplift[i]===undefined?"":uplift[i]>0?` · UPLIFT AT LEAST ${uplift[i]} KG`:" · NO UPLIFT NEEDED TO CONTINUE"}</div>`;
+    if(warn) h+=`<div class="msg bad">BELOW MINIMUM — IFR DEPARTURE NOT AVAILABLE. REFUEL BEFORE CONTINUING, OR HOLD FOR WEATHER.</div>`;
+    h+=`</div>`;
+
+    if(!last){
+      const s=sec[i], noAlt=s.sc==="VMC"||s.sc==="A";
+      const altTxt = noAlt ? "NO ALTN" : "ALTN "+s.a1.id+(s.sc==="D"?"+"+s.a2.id:"");
+      h+=`<div class="sector">
+        <div class="sline" data-open="${i}"><span>→ ${s.to.id} · ${Math.round(s.dist)} nm · <span class="sc">${s.sc}</span> · ${altTxt}</span>
+          <span><b>${s.burn} KG</b><span class="chev">${state.open[i]?"▴":"▾"}</span></span></div>`;
+      if(state.open[i]){
+        h+=`<div class="det"><div class="chips">${["VMC","A","B","C","D"].map(c=>
+            `<div class="chip ${c===s.sc?"on":""} ${s.ok.includes(c)?"":"off"}" ${s.ok.includes(c)?`data-scen="${i}:${c}"`:""}>${c}</div>`).join("")}</div>
+          <div class="desc">${SCEN[s.sc]}${s.to.kind==="PinS"?" <span class='dim'>PinS destination: VMC, A and B not offered (OMA 8.3.2.7.7; site weather uncertified).</span>":""}</div>`;
+        if(!noAlt){
+          h+=`<div class="altrow">ALTERNATE <select data-alt="${i}">${opts(s.a1.id,s.list)}</select>
+              <span class="auto">${s.auto?"nearest":"chosen"} · ${Math.round(nm(s.to,s.a1))} nm</span></div>`;
+          if(s.sc==="D") h+=`<div class="altrow">2ND ALTN&nbsp; <select data-alt2="${i}">${opts(s.a2.id,s.list.filter(x=>x!==s.a1))}</select>
+              <span class="auto">${Math.round(nm(s.to,s.a2))} nm</span></div>`;
+        }
+        h+=`<table><thead><tr><th>MIN TO LIFT ${s.from.id}</th><th>REQUIREMENT</th><th class="num">L</th><th class="num">KG</th></tr></thead><tbody>
+          ${row("Start &amp; Taxi","Start and taxi",TAXI)}
+          ${row("Trip",`${s.from.id}→${s.to.id} · ${Math.round(s.dist)} nm`,s.trip)}
+          ${row("Contingency","10% of trip",s.cont)}`;
+        if(s.useOnward) h+=row("IFR Approach","1 × 70 kg at "+s.to.id,APP)+row("Onward","Min to lift "+s.to.id,sec[i+1].gate);
+        else if(s.sc==="VMC") h+=row("IFR Approach","1 × 70 kg at "+s.to.id,APP)+row("Final Reserve","30 min holding",RESERVE);
+        else if(s.sc==="A") h+=row("IFR Approaches","2 × 70 kg at "+s.to.id,2*APP)+row("Additional","15 min added to trip",ADD15)+row("Final Reserve","30 min holding",RESERVE);
+        else h+=row("IFR Approach","1 × 70 kg at "+s.to.id,APP)+row("Alternate",`${s.to.id}→${s.far.id} · ${Math.round(s.altNm)} nm`,s.altKg)
+               +row("Altn approach","1 × 70 kg at "+s.far.id,APP)+row("Final Reserve","30 min holding",RESERVE);
+        h+=`<tr class="tot"><td>MIN TO LIFT</td><td></td><td class="num">${L(s.gate)}</td><td class="num">${s.gate}</td></tr></tbody></table></div>`;
+      }
+      h+=`</div>`;
+    }
+  }
+  h+=`<div class="add" id="add">+ ADD SECTOR</div>`;
+  document.getElementById("app").innerHTML=h;
+}
+
+const app=document.getElementById("app");
+app.addEventListener("change",e=>{
+  const t=e.target.dataset, v=e.target.value;
+  if(t.stop!==undefined){ const i=+t.stop; state.stops[i]=v; state.refuel[i]=false; if(i>0){ state.alt[i-1]=null; state.alt2[i-1]=null; state.scen[i-1]=null; } }
+  if(t.act!==undefined) state.actual[+t.act]=v.replace(/[^0-9]/g,"");
+  if(t.alt!==undefined) state.alt[+t.alt]=v;
+  if(t.alt2!==undefined) state.alt2[+t.alt2]=v;
+  render();
+});
+app.addEventListener("click",e=>{
+  const q=k=>e.target.closest(`[data-${k}]`);
+  if(q("scen")){ const [i,c]=q("scen").dataset.scen.split(":"); state.scen[+i]=c; }
+  else if(q("ref")){ const i=+q("ref").dataset.ref; state.refuel[i]=!state.refuel[i]; state.actual[i]=""; }
+  else if(q("open")){ const i=+q("open").dataset.open; state.open[i]=!state.open[i]; }
+  else if(q("del")){ const i=+q("del").dataset.del; state.stops.splice(i,1); state.actual.splice(i,1); state.refuel.splice(i,1);
+    const m=state.stops.length-1; state.alt=Array(m).fill(null); state.alt2=Array(m).fill(null); state.open=Array(m).fill(false); state.scen=Array(m).fill(null); }
+  else if(e.target.id==="add"){ state.stops.push("EGKK"); state.actual.push(""); state.refuel.push(false);
+    state.alt.push(null); state.alt2.push(null); state.open.push(false); state.scen.push(null); }
+  else return;
+  render();
+});
+document.getElementById("whh").addEventListener("change",e=>{ state.whh=e.target.checked; render(); });
+render();
+</script>
+</body>
+</html>

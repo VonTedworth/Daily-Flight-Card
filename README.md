@@ -6,7 +6,7 @@ A self-contained web app (single `index.html`, no server, no accounts) replacing
 
 One card = **one SRP page** (seven sectors). Several cards per day is normal; see §4 (carry-over).
 
-The app has four tabs: **A/C DATA** (once-per-SRP setup and admin), **FLIGHTS** (the seven sector rows), **UPLIFT** (fuel calculator), **IFR FUEL** (IFR airfield-to-airfield fuel cross-check, §3A). It auto-scales by device: iPhone 1×, iPad mini ≈1.35×, iPad ≈1.55×.
+The app has four tabs: **A/C DATA** (once-per-SRP setup and admin), **FLIGHTS** (the seven sector rows), **UPLIFT** (fuel calculator), **IFR FUEL** (multi-sector IFR fuel cross-check, §3A). It auto-scales by device: iPhone 1×, iPad mini ≈1.35×, iPad ≈1.55×.
 
 ---
 
@@ -127,59 +127,72 @@ UPLIFT L  = UPLIFT KG ÷ DENSITY
 
 ---
 
-## 3A. IFR FUEL tab
+## 3A. IFR FUEL tab — multi-sector planning
 
-> **Planning cross-check only — not a certified flight-planning tool. Verify against the OFP and current plates.** It applies the company fuel scheme (OMB B34 §5.2.3) and the alternate/scenario logic (OMA 8H 8.1.3.3.2) to selected airfields so you can gross-error-check your own calculation: *"I have X kg — is it enough, and what are my options?"*
+> **Planning cross-check only — not a certified flight-planning tool. Verify against the OFP and current plates.** It applies the company fuel scheme (OMB B34 §5.2.3) and the OMA 8H destination/alternate rules to a **trip of sectors**, so you can gross-error-check your own plan. The OMA is the authority: the planner is meant to be neither less nor more restrictive than it.
 
-**Fully offline.** Every figure comes from `src/fuel-planner-dataset.json`, bundled into the app at build. Distances and fuel are computed on the device; the tab makes no network request and stores nothing. Units here are the operational standard: fuel **kg** (L = kg ÷ 0.79), distance **nm**.
+**Why a trip, not a leg.** PinS hospital sites have no fuel, so everything the whole chain needs must be on board at the first lift. The tab gives (1) **REQUIRED TO LIFT** from the first site, and (2) a **MIN TO LIFT** at every later site, to check against the gauge before departing it. If the fuel at a site is below its minimum, an IFR departure from there is not available: refuel, or hold for weather.
 
-**Map.** A wireframe map of south-east England (Kent, Surrey, Sussex, Greater London, Hampshire, Isle of Wight, and Essex up to Stansted and Chelmsford) sits at the top of the tab. It is bundled inline — no tiles, no runtime fetch. Airfields are cyan circles, refuel points amber diamonds, hospitals Ⓗ; the selected origin is green, destination cyan, alternate(s) amber, with the route drawn solid (origin → destination) and dashed (destination → alternate). **It is also a selector:** tapping an airfield takes the next unset role (origin → destination → alternate), tapping a selected one clears it, and the dropdowns below stay in step. Redhill can only be an origin. Hospitals and refuel points just show a caption when tapped (the hospital's full name). **Every site is labelled** — airfields by ICAO, refuel points by ICAO, hospitals by a short name (RSCH, WHH, KCH, SGH, MAID, PEM, STM, QA, QEQM, FPH, EDGH, SOTON, HAST = Conquest Hastings, MMH = Medway Maritime, DVH = Darent Valley, BROOM = Broomfield Chelmsford) — and the labels are nudged clear of each other and of the markers. In scenario D the route is drawn destination → alternate 1 → alternate 2. The dropdowns remain the precise way to choose.
+**Fully offline.** Every figure and rule comes from `src/fuel-planner-dataset.json`, bundled at build; nothing is fetched. The current trip is saved on the phone under its own key (`ifr-fuel-trip`) — it never touches the flight card. **RESET TRIP** (asks first) returns to the default trip. Units: fuel **kg** (L = kg ÷ 0.79), distance **nm**. The maths is a port of the approved prototype (`prototype-fuel-multisector.html`); the build brief is `multisector-build-brief.md`.
+
+### Stops
+Any **IFR airfield** or **PinS site** can be a stop: EGKR Redhill, EGKK, EGKB, EGKA, EGMD, EGMC, EGHI, EGLL, EGLC, EGSS, and the PinS sites EGKD William Harvey (WHH), EGKC King's College (KCH), EGRS Royal Sussex (RSCH), EGGB East Brighton Park (EBP). Other hospitals and the VFR refuel points (Manston, Rochester) are map markers only. A site whose only approach is not yet usable carries a tag — **PLANNED** (Redhill's PinS) or **CONFIRM** (the hospital PinS procedures) — and stays selectable. **+ ADD SECTOR** adds a stop; **✕** removes one (minimum two).
+
+### Per sector (stop *i* → stop *i+1*)
+```
+trip  = round(dist_nm ÷ 130 × 280)       great-circle distance, unrounded nm
+cont  = round(10% × trip)                planned as used on every sector
+burn  = 30 start & taxi + trip + cont + 70 (one approach at the destination)
+
+own requirement, by profile:
+  VMC : burn + 150
+  A   : burn + 70 (second approach) + 70 (15 min added to trip) + 150
+  B, C: burn + alternate + 70 (approach at the alternate) + 150
+  D   : as B, alternate = the FARTHER of the two alternates from the destination
+```
+
+### Minimum to lift — worked backwards from the last sector
+```
+min[last] = own[last]
+min[i]    = max( own[i],  burn[i] + min[i+1] )     — unless stop i+1 is a REFUEL stop,
+                                                     then min[i] = own[i]
+```
+Fuel then runs forwards: at each stop it is the **ACTUAL** figure if you entered one, otherwise the plan (previous fuel − previous burn), shown as the input's placeholder. **MARGIN = fuel − min**; below zero the card turns amber with *BELOW MINIMUM — IFR DEPARTURE NOT AVAILABLE. REFUEL BEFORE CONTINUING, OR HOLD FOR WEATHER.* The last stop shows only **PLANNED ON LANDING**. With nothing entered at the first stop the plan assumes you lift exactly the minimum, and the headline asks for the figure.
+
+### Profiles (OMA 8H 8.1.3.3.2), chosen per sector
+| Profile | Alternate | Hint | Offered for |
+|---|---|---|---|
+| VMC | none | NO ALTN · 1 APP | airfields |
+| A | none | NO ALTN · 2 APPS | airfields with **two approaches on independent aids** (not Shoreham — RNP only) |
+| B | 1 | 1 ALTN · +400M | airfields (default) |
+| C | 1 | 1 ALTN · +800M | airfields; **PinS destinations (default)** |
+| D | 2 (fuel to the farther) | 2 ALTN · FARTHER | airfields; PinS destinations |
+
+**PinS destinations: C and D only.** OMA 8.3.2.7.4 — *PinS procedures offer no alleviation from requirements to declare and carry fuel for a destination alternate*; 8.3.2.7.7 — one destination alternate is assumed unless the destination meets planning minima from CAP 746-compliant weather. Site weather (SkylinkPro) is uncertified, so B does not apply. A site counts as a PinS destination if it is a PinS site or its only procedure is a PinS (so Redhill too). **B and C carry the same fuel**; they differ only in the alternate planning minima in the description (B +400 m / +200 ft, C +800 m / +400 ft). The weather minima are descriptive — **this version does not check weather**.
+
+**Alternate validity (OMA 8.1.3.3.2; PinS 8.3.2.7.4).** An airfield can be the alternate only if a **non-GNSS** approach exists at the alternate or at the destination. GNSS types are listed in the dataset (`gnss_approach_types`: RNP LNAV, RNP LNAV/VNAV, LPV, PinS). So for a PinS destination or Shoreham, only airfields with an ILS/NDB/VOR qualify; for Gatwick, Shoreham is allowed. Only airfields with a *usable* (not planned/confirm) approach are alternates, so Redhill is never one. The **nearest** valid alternate is chosen by default ("nearest"); pick another and it shows "chosen". Changing a destination resets that sector's profile and alternate to the defaults.
+
+### Refuel stops
+**REFUEL HERE** appears on a mid-trip stop whose site has fuel (every airfield; no PinS site yet). It breaks the chain at that stop, relabels the input **AFTER REFUEL KG**, and shows *ARRIVE WITH n KG · UPLIFT AT LEAST n KG* (or that no uplift is needed). William Harvey has `fuel: false` (`fuel_planned: true`); when fuel arrives there it is a one-line dataset change.
+
+### Screen
+Map (route through every stop solid, each sector's alternate(s) dashed; tap a site to see what it is) → **REQUIRED TO LIFT** headline with ENOUGH/SHORT against the fuel entered at the first stop → one card per stop with three numbers (MIN TO LIFT · ACTUAL KG · MARGIN) → between cards a collapsed sector line (destination · distance · profile · alternate(s) · sector burn). Tap the line for the profile strip, its description, the approaches at the destination and alternate(s), the alternate picker(s), and the OMB §5.2.3-style table (MIN TO LIFT · REQUIREMENT · L · KG) summing to that site's minimum — ending **Onward — min to lift next site** when the onward chain governs.
+
+**Reference check (brief §6).** Default trip EGKR → EGKD → EGKC → EGKR, profile C, nearest alternates (EGMD, EGLC, EGKK): burns 194 / 200 / 136 kg, **MIN TO LIFT 759 / 565 / 365 kg**; with 820 kg at the start, planned landing fuel 290 kg. Add EGKR → EGKK: VMC 790 / 596 / 396 / 260, A 930 / 736 / 536 / 400, D (EGKB + EGKA) 901 / 707 / 507 / 371.
+
+### Open items (implemented as stated, kept as data, awaiting confirmation)
+1. **Contingency** 10% per sector, planned as used, nothing carried forward.
+2. **PinS in clear VMC** — whether a PinS flight can ever be planned without an alternate. Not offered, following 8.3.2.7.7.
+3. **PinS approach status** — which PinS procedures are published and usable; the dataset marks them `confirm` / `planned`.
+4. **Site coordinates** — East Brighton Park (EGGB) is the user-supplied 50.8174, −0.1018; all other site coordinates still to be verified.
+5. The OMA PinS text is a provisional starting position and may change.
+
+### Map
+A wireframe map of south-east England (Kent, Surrey, Sussex, Greater London, Hampshire, Isle of Wight, and Essex up to Stansted and Chelmsford), bundled inline — no tiles, no runtime fetch. Airfields are cyan circles, PinS sites cyan Ⓗ, other hospitals grey Ⓗ, refuel points amber diamonds; the first stop is green, other stops cyan, alternates amber. Every site is labelled — airfields by ICAO, hospitals and PinS sites by short name (RSCH, WHH, KCH, EBP, SGH, MAID, PEM, STM, QA, QEQM, FPH, EDGH, SOTON, HAST = Conquest Hastings, MMH = Medway Maritime, DVH = Darent Valley, BROOM = Broomfield Chelmsford) — with labels nudged clear of each other and of the markers.
 
 The county outlines are ONS data simplified to ~200 m — fine for orientation and for placing markers, **not for navigation**. They are generated by `tools/gen_map.py` into `src/map-geometry.json` in the *same projection* the markers use (equirectangular, longitude scaled by cos 51.1°), which `domtest17` checks by confirming airfields land in their real counties. Boundary data: *Contains OS data © Crown copyright and database right 2024. Source: Office for National Statistics, licensed under the Open Government Licence v3.0* (Counties and Unitary Authorities, December 2024, UK BGC).
 
-**Selections.** ORIGIN = any IFR airfield (EGKR Redhill, EGKK, EGKB, EGKA, EGMD, EGMC, EGHI, EGLL, EGLC, EGSS Stansted). DESTINATION and ALTERNATE = any IFR airfield with at least one published approach, so **Redhill is origin-only**. Refuel points (Manston, Rochester) and hospitals are in the dataset but are not selectable in this version. Picking an origin removes it from the destination list; the chosen destination (and, for scenario D, the other alternate) is removed from the alternate lists. Each dropdown shows its leg distance, and ALTERNATE 2 shows it *from alternate 1*. Under the destination and each alternate an **APPROACHES** line lists what is published at that field (type and runway, with notes — e.g. `ILS 21 · RNP 21 · RNP 03 (RF, NEW 2026)`); it is information only, taken from the bundled dataset, so check it against the current eAIP / company plate.
-
-**Distance.** Great-circle (haversine), nm, **rounded to whole nm first** so every kg figure can be reproduced by hand from the nm shown on screen.
-
-```
-LEG(nm) = round( nm ÷ 130 kt × 280 kg/hr )
-```
-
-**Breakdown table** (OMB §5.2.3 layout — # · REQUIREMENT · L · KG):
-
-| Line | kg |
-|---|---|
-| START & TAXI | 30, editable |
-| TRIP | LEG(origin → destination) |
-| ALTERNATE | LEG(destination → alternate); scenarios B, C only |
-| ALTERNATES | **Scenario D only:** the two alternates are planned **in sequence** — LEG(destination → alternate 1 + alternate 1 → alternate 2) — so the line covers flying the whole chain. Alternate 2 is measured *from alternate 1*, not from the destination; the table shows the route and both legs (e.g. `EGMD → EGKB → EGKK · 41 + 14 NM`). Order matters |
-| CONTINGENCY 10% | round(0.10 × TRIP) |
-| FINAL RESERVE | 150 |
-| IFR APPROACHES | count × 70 — one 70 kg allowance per approach, at each airfield (destination and each alternate); −/+ stepper, default per scenario. The line shows where they fall, e.g. `EGMD 1 · EGKB 1 · EGKK 1` (A: `EGKA 2`) |
-| PinS / 2-APP (15 MIN) | **Scenario A only:** round(15 ÷ 60 × 280) = 70 |
-| DISCRETIONARY | editable, default 0 |
-
-`REQUIRED = Σ`, `MARGIN = FUEL ON BOARD − REQUIRED`. **ENOUGH +n** (green) when margin ≥ 0, **SHORT −n** (amber) when negative. Changing scenario resets the approach count to that scenario's default, and **clears any alternates the new scenario doesn't use** (D → B/C drops alternate 2; anything → A/VMC drops both) so nothing stale stays selected or coloured on the map. Origin and destination are never touched. Going back up (e.g. B → D) leaves the new alternate empty to be chosen again.
-
-| Scenario | Alternate line | Approaches (default) | Notes |
-|---|---|---|---|
-| VMC | none | 1 | Destination forecast VMC 1 hr either side of ETA |
-| A | none | 2 | + PinS / 2-app 70 kg; two independent approaches, ceiling ≥ DH + 400 ft, vis ≥ 3000 m |
-| B | 1 alternate | 2 | Alternate forecast ≥ RVR/vis + 400 m, ceiling ≥ DH/MDH + 200 ft |
-| C | 1 alternate | 2 | Fuel identical to B; differs only in the minima pad (+800 m / +400 ft) |
-| D | 2 alternates, in sequence | 3 | dest → alt 1 → alt 2; fuel covers the whole chain |
-
-The ceiling/visibility figures are shown as the scenario descriptor text only — **this version does not check weather against them**.
-
-**Scenario buttons** carry a two-line hint so the plan type is readable without selecting it: VMC *NO ALTN / 1 APP*, A *NO ALTN / 2 APPS*, B *1 ALTN / +400M*, C *1 ALTN / +800M*, D *2 ALTN / CHAIN* (the +400 m / +800 m is the alternate's weather-minima pad, a descriptor only). The full wording appears under the strip.
-
-**Indicative flags** (not certified): an amber note when `0 ≤ margin < 75 kg` ("margin below engine-failure 15-min hold"); and when REQUIRED exceeds the 904 kg usable fuel. Over-MTOM is handled on the A/C DATA page, not here.
-
-**Worked example (gross-error check):** Redhill → Shoreham (23 nm), alternate Gatwick (19 nm), scenario B, 500 kg on board → TRIP 50, ALTERNATE 41, CONTINGENCY 5, 2 approaches 140, START & TAXI 30, FINAL RESERVE 150 → **REQUIRED 416, ENOUGH +84**.
-
-**Dataset note:** `fuel-planner-dataset.json` still carries the older scenario D remark "plan to worse of the two"; the app now plans D as the chain above (alternate 2 from alternate 1). Hospitals in the bundled copy also gained a `short` label field used by the map.
-
-**Verify before trusting:** airfield coordinates are published ARP and hospital coordinates are approximate — confirm against the current eAIP. The approach DH values in the dataset are OMA 8H **system-minima floors by approach type, not published airfield OCH**; the actual DH comes from the company plate and is usually higher. They do not affect fuel in this version.
+**Verify before trusting:** airfield coordinates are published ARP and hospital coordinates are approximate — confirm against the current eAIP. Approach DH values in the dataset are OMA 8H **system-minima floors by approach type, not published OCH**; the actual DH comes from the company plate. They do not affect fuel.
 
 ---
 

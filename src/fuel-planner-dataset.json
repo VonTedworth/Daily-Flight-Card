@@ -1,7 +1,7 @@
 {
   "_meta": {
     "purpose": "Data for the AW169 IFR Fuel Planner tab. Bundled into the app at build — no runtime network needed. All computed on-device.",
-    "verify_before_trust": "Airfield coordinates = published ARP (verify vs current eAIP). Hospital coords = approximate location (verify). Approach DH values = OMA 8H system-minima FLOORS by type, NOT published airfield OCH — actual DH comes from the company plate and is usually higher. AIRAC-dated when approach selection goes live.",
+    "verify_before_trust": "PinS approach status values (planned/confirm) are placeholders to confirm. East Brighton Park position supplied by the user (50.8174, -0.1018). Airfield coordinates = published ARP (verify vs current eAIP). Hospital coords = approximate location (verify). Approach DH values = OMA 8H system-minima FLOORS by type, NOT published airfield OCH — actual DH comes from the company plate and is usually higher. AIRAC-dated when approach selection goes live.",
     "sources": "OMA Part A Iss7 Rev1 Aug2026 §8H; OMB Part B34 AW169 Iss1 Rev1 May2026 §5; UK eAIP (NATS Aurora)."
   },
 
@@ -33,6 +33,19 @@
       "B":    { "label": "1 alternate",                 "alternates": 1, "approaches_default": 2, "alt_fuel": true,  "altn_minima": { "rvr_vis_add_m": 400, "ceiling_add_ft": 200 } },
       "C":    { "label": "1 alternate (reasonable prob)","alternates": 1, "approaches_default": 2, "alt_fuel": true,  "altn_minima": { "rvr_vis_add_m": 800, "ceiling_add_ft": 400 } },
       "D":    { "label": "2 alternates",                "alternates": 2, "approaches_default": 3, "alt_fuel": true,  "altn_rule": "plan to worse of the two" }
+    },
+    "gnss_approach_types": ["RNP_LNAV", "RNP_LNAV_VNAV", "LPV", "PinS"],
+    "alternate_validity": { "rule": "valid only if a non-GNSS approach exists at the alternate or at the destination", "ref": "OMA 8H 8.1.3.3.2; PinS: 8.3.2.7.4" },
+    "profiles_by_destination": {
+      "pins":               { "allowed": ["C", "D"], "default": "C", "ref": "OMA 8H 8.3.2.7.4 / 8.3.2.7.7 — alternate always carried; site weather uncertified so B not valid" },
+      "airfield":           { "allowed": ["VMC", "A", "B", "C", "D"], "default": "B", "ref": "OMA 8H 8.1.3.3.2" },
+      "airfield_one_aid":   { "allowed": ["VMC", "B", "C", "D"], "default": "B", "note": "A needs two approaches on independent aids" }
+    },
+    "multi_sector": {
+      "contingency": "10% of each sector's trip fuel, planned as used on every sector, nothing carried forward (OPEN — awaiting confirmation)",
+      "approach_per_arrival": 1,
+      "default_alternate": "nearest valid alternate to the sector destination; user may change",
+      "refuel_stop": "only at sites with fuel; uplift to at least the minimum to lift; breaks the chain"
     }
   },
 
@@ -53,7 +66,7 @@
   },
 
   "sites": [
-    { "id": "EGKR", "icao": "EGKR", "name": "Redhill",        "type": "airfield_ifr", "lat": 51.2136, "lon": -0.1386, "fuel": true, "approaches": [] },
+    { "id": "EGKR", "icao": "EGKR", "name": "Redhill",        "type": "airfield_ifr", "lat": 51.2136, "lon": -0.1386, "fuel": true, "approaches": [ {"type":"PinS","rwy":"-","dh_floor_ft":250,"status":"planned"} ] },
     { "id": "EGKK", "icao": "EGKK", "name": "Gatwick",        "type": "airfield_ifr", "lat": 51.1481, "lon": -0.1903, "fuel": true, "approaches": [ {"type":"ILS","rwy":"08R/26L","dh_floor_ft":200}, {"type":"RNP_LNAV","rwy":"08R/26L","dh_floor_ft":250} ] },
     { "id": "EGKB", "icao": "EGKB", "name": "Biggin Hill",    "type": "airfield_ifr", "lat": 51.3307, "lon": 0.0325,  "fuel": true, "approaches": [ {"type":"ILS","rwy":"21","dh_floor_ft":200}, {"type":"RNP_LNAV","rwy":"21","dh_floor_ft":250}, {"type":"RNP_LNAV","rwy":"03","dh_floor_ft":250,"note":"RF, new 2026"} ] },
     { "id": "EGKA", "icao": "EGKA", "name": "Shoreham",       "type": "airfield_ifr", "lat": 50.8356, "lon": -0.2972, "fuel": true, "approaches": [ {"type":"RNP_LNAV","rwy":"02/20","dh_floor_ft":250} ] },
@@ -67,9 +80,10 @@
     { "id": "EGMH", "icao": "EGMH", "name": "Manston",        "type": "refuel_vfr", "lat": 51.3422, "lon": 1.3461, "fuel": true },
     { "id": "EGTO", "icao": "EGTO", "name": "Rochester",      "type": "refuel_vfr", "lat": 51.3517, "lon": 0.5033, "fuel": true },
 
-    { "id": "H_RSCH",  "name": "Royal Sussex County, Brighton", "type": "hospital", "short": "RSCH", "lat": 50.8190, "lon": -0.1170 },
-    { "id": "H_WHH",   "name": "William Harvey, Ashford",       "type": "hospital", "short": "WHH", "lat": 51.1360, "lon": 0.9000 },
-    { "id": "H_KCH",   "name": "King's College, Denmark Hill",  "type": "hospital", "short": "KCH", "lat": 51.4680, "lon": -0.0940 },
+    { "id": "EGRS", "icao": "EGRS", "short": "RSCH", "name": "Royal Sussex County, Brighton", "type": "pins_site", "lat": 50.8190, "lon": -0.1170, "fuel": false, "approaches": [ {"type":"PinS","rwy":"-","dh_floor_ft":250,"status":"confirm"} ] },
+    { "id": "EGGB", "icao": "EGGB", "short": "EBP",  "name": "East Brighton Park",            "type": "pins_site", "lat": 50.8174, "lon": -0.1018, "fuel": false, "approaches": [ {"type":"PinS","rwy":"-","dh_floor_ft":250,"status":"confirm"} ] },
+    { "id": "EGKD", "icao": "EGKD", "short": "WHH",  "name": "William Harvey, Ashford",       "type": "pins_site", "lat": 51.1360, "lon": 0.9000, "fuel": false, "fuel_planned": true, "approaches": [ {"type":"PinS","rwy":"-","dh_floor_ft":250,"status":"confirm"} ] },
+    { "id": "EGKC", "icao": "EGKC", "short": "KCH",  "name": "King's College, Denmark Hill",  "type": "pins_site", "lat": 51.4680, "lon": -0.0940, "fuel": false, "approaches": [ {"type":"PinS","rwy":"-","dh_floor_ft":250,"status":"confirm"} ] },
     { "id": "H_SGH",   "name": "St George's, Tooting",          "type": "hospital", "short": "SGH", "lat": 51.4270, "lon": -0.1750 },
     { "id": "H_MAID",  "name": "Maidstone",                     "type": "hospital", "short": "MAID", "lat": 51.2480, "lon": 0.4950 },
     { "id": "H_PEM",   "name": "Tunbridge Wells (Pembury)",     "type": "hospital", "short": "PEM", "lat": 51.1480, "lon": 0.3170 },
@@ -78,10 +92,10 @@
     { "id": "H_QEQM",  "name": "QEQM, Margate",                 "type": "hospital", "short": "QEQM", "lat": 51.3830, "lon": 1.4050 },
     { "id": "H_FPH",   "name": "Frimley Park",                  "type": "hospital", "short": "FPH", "lat": 51.3070, "lon": -0.7140 },
     { "id": "H_EDGH",  "name": "Eastbourne DGH",                "type": "hospital", "short": "EDGH", "lat": 50.7865, "lon": 0.2698 },
+    { "id": "H_SGEN",  "name": "Southampton General",           "type": "hospital", "short": "SOTON", "lat": 50.9330, "lon": -1.4350 },
     { "id": "H_CONQ",  "name": "Conquest, Hastings",            "type": "hospital", "short": "HAST", "lat": 50.8854, "lon": 0.5677 },
     { "id": "H_MMH",   "name": "Medway Maritime, Gillingham",   "type": "hospital", "short": "MMH", "lat": 51.3800, "lon": 0.5419 },
     { "id": "H_DVH",   "name": "Darent Valley, Dartford",       "type": "hospital", "short": "DVH", "lat": 51.4350, "lon": 0.2584 },
-    { "id": "H_BROOM", "name": "Broomfield, Chelmsford",        "type": "hospital", "short": "BROOM", "lat": 51.7745, "lon": 0.4661 },
-    { "id": "H_SGEN",  "name": "Southampton General",           "type": "hospital", "short": "SOTON", "lat": 50.9330, "lon": -1.4350 }
+    { "id": "H_BROOM", "name": "Broomfield, Chelmsford",        "type": "hospital", "short": "BROOM", "lat": 51.7745, "lon": 0.4661 }
   ]
 }

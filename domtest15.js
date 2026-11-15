@@ -1,131 +1,129 @@
-// IFR FUEL engine — unit tests against build/fuelcalc.cjs (built by `npm run build`).
+// IFR FUEL — multi-sector engine, unit tests against build/fuelcalc.cjs (built by `npm run build`).
+// Reference numbers are brief §6 (multisector-build-brief.md), taken from the approved prototype.
 const f = require("./build/fuelcalc.cjs");
 const res = [];
 const check = (n, ok) => res.push([n, !!ok]);
-const near = (a, b, tol) => Math.abs(a - b) <= tol;
-const line = (r, key) => r.lines.find((l) => l.key === key);
-const base = { origin: "EGKR", dest: "EGKA", alts: ["EGKK"], scenario: "B", fob: 500 };
+const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
+const P = f.planner;
+const S = (id) => f.siteById(id);
+const trip = (patch = {}) => Object.assign(f.freshTrip(), patch);
+const withSector = (t, stop, sc = null) => { t.stops.push(stop); t.actual.push(""); t.refuel.push(false); t.scen.push(sc); t.alt.push(null); t.alt2.push(null); return t; };
+const gates = (r) => r.sec.map((s) => s.gate);
+const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const clone = (o) => JSON.parse(JSON.stringify(o));
 
-// ── Distances and leg fuel ──
-const nm1 = f.haversineNm(f.siteById("EGKR"), f.siteById("EGKA"));
-const nm2 = f.haversineNm(f.siteById("EGKA"), f.siteById("EGKK"));
-check(`haversine Redhill→Shoreham ≈ 23 nm (${nm1.toFixed(1)})`, near(nm1, 23, 1));
-check(`haversine Shoreham→Gatwick ≈ 19 nm (${nm2.toFixed(1)})`, near(nm2, 19, 1));
-check("leg_kg 23 nm → 50 kg", near(f.legKg(23), 50, 1));
-check("leg_kg 19 nm → 41 kg", near(f.legKg(19), 41, 1));
-check("kg → L at 0.79", f.kgToL(79) === 100 && f.kgToL(150) === 190);
+// ── distances / leg fuel ──
+check("haversine Redhill→Shoreham ≈ 23.5 nm", near(f.haversineNm(S("EGKR"), S("EGKA")), 23.5, 0.2));
+check("leg fuel = round(nm ÷ 130 × 280): 23 nm → 50 kg", f.legKg(23) === 50);
+check("kg → L at 0.79", f.kgToL(79) === 100);
 
-// ── Scenario B worked example ──
-const b = f.computeFuel(base);
-check(`Scenario B REQUIRED ≈ 415 (${b.required})`, near(b.required, 415, 2));
-check(`Scenario B margin ≈ +85 at 500 kg (${b.margin})`, near(b.margin, 85, 2));
-check("Scenario B has an Alternate line (41 kg)", line(b, "alternate") && line(b, "alternate").kg === 41);
-check("Scenario B approaches default 2 (140 kg)", line(b, "approaches").count === 2 && line(b, "approaches").kg === 140);
-check("Scenario B: no PinS line", !line(b, "pins"));
-check("fixed lines: start&taxi 30, reserve 150, contingency 10% of trip",
-  line(b, "startTaxi").kg === 30 && line(b, "finalReserve").kg === 150 && line(b, "contingency").kg === Math.round(0.1 * line(b, "trip").kg));
-check("serials run 1..n in order", b.lines.every((l, i) => l.serial === i + 1));
-check("REQUIRED is the sum of the lines", b.required === b.lines.reduce((s, l) => s + l.kg, 0));
-check("verdict ENOUGH when margin ≥ 0", b.verdict === "ENOUGH");
-const c = f.computeFuel({ ...base, scenario: "C" });
-check("Scenario C fuel identical to B", c.required === b.required);
+// ── brief §6: default trip EGKR → EGKD → EGKC → EGKR, profile C, nearest alternates ──
+const t0 = trip(); t0.actual[0] = "820";
+const r0 = P.computeTrip(t0);
+check("default trip stops EGKR → EGKD → EGKC → EGKR", eq(r0.trip.stops, ["EGKR", "EGKD", "EGKC", "EGKR"]));
+check("profile C on every sector (PinS destinations default to C)", r0.sec.every((s) => s.sc === "C"));
+check("nearest alternates EGMD, EGLC, EGKK", eq(r0.sec.map((s) => s.a1.id), ["EGMD", "EGLC", "EGKK"]) && r0.sec.every((s) => s.auto));
+check(`sector burns 194, 200, 136 (${r0.sec.map((s) => s.burn).join(", ")})`, eq(r0.sec.map((s) => s.burn), [194, 200, 136]));
+check(`MINIMUM TO LIFT 759, 565, 365 (${gates(r0).join(", ")})`, eq(gates(r0), [759, 565, 365]));
+check(`820 kg at the start → planned landing fuel 290 (${r0.landing})`, r0.landing === 290);
+check("headline: required to lift EGKR 759, margin +61", r0.headline.gate === 759 && r0.headline.entered && r0.headline.margin === 61);
+check("no fuel entered at the start: lifts at exactly the minimum, headline not 'entered'", (() => { const r = P.computeTrip(trip()); return r.fuel[0] === 759 && !r.headline.entered && r.headline.margin === null; })());
+check("each sector's table sums to its minimum to lift", r0.sec.every((s) => s.rows.reduce((a, x) => a + x.kg, 0) === s.gate));
+check("onward chain governs sectors 1–2 (table ends 'Onward — min to lift next site')", r0.sec[0].useOnward && r0.sec[1].useOnward && !r0.sec[2].useOnward && r0.sec[0].rows[r0.sec[0].rows.length - 1].req === "Min to lift EGKD");
 
-// ── Other scenarios ──
-const a = f.computeFuel({ ...base, scenario: "A", alts: [] });
-check("Scenario A: no Alternate line", !line(a, "alternate"));
-check("Scenario A: PinS/2-app line = 70 kg", line(a, "pins") && line(a, "pins").kg === 70);
-check("Scenario A: approaches default 2", line(a, "approaches").count === 2);
-const v = f.computeFuel({ ...base, scenario: "VMC", alts: [] });
-check("Scenario VMC: no Alternate line, no PinS line", !line(v, "alternate") && !line(v, "pins"));
-check("Scenario VMC: approaches default 1 (70 kg)", line(v, "approaches").count === 1 && line(v, "approaches").kg === 70);
-// Scenario D: alternates are planned IN SEQUENCE — dest → alt1, then alt1 → alt2.
-// Ed's example: Redhill → Lydd, alternate 1 Biggin Hill, alternate 2 Gatwick.
-const dEx = { origin: "EGKR", dest: "EGMD", alts: ["EGKB", "EGKK"], scenario: "D", fob: 600 };
-const d = f.computeFuel(dEx);
-const nm = (a, b2) => Math.round(f.haversineNm(f.siteById(a), f.siteById(b2)));
-const l1 = nm("EGMD", "EGKB"), l2 = nm("EGKB", "EGKK");
-check(`Scenario D: trip is Redhill→Lydd (${d.tripNm} nm)`, d.tripNm === nm("EGKR", "EGMD"));
-check(`Scenario D: leg 1 = Lydd→Biggin Hill (${l1} nm), leg 2 = Biggin Hill→Gatwick (${l2} nm)`, d.altLegs[0] === l1 && d.altLegs[1] === l2);
-check("Scenario D: alternate 2 is measured from alternate 1, NOT from the destination", d.altLegs[1] !== nm("EGMD", "EGKK") && d.altLegs[1] === l2);
-check("Scenario D: Alternate line covers the whole chain (legs summed)", d.altnNm === l1 + l2 && line(d, "alternate").kg === f.legKg(l1 + l2));
-check("Scenario D: Alternate line names the route and both legs", line(d, "alternate").sub === `EGMD → EGKB → EGKK · ${l1} + ${l2} NM`);
-check("Scenario D: approaches default 3", line(d, "approaches").count === 3);
-const dSwap = f.computeFuel({ ...dEx, alts: ["EGKK", "EGKB"] });
-check("Scenario D: order matters — swapping the alternates re-plans the legs",
-  dSwap.altLegs[0] === nm("EGMD", "EGKK") && dSwap.altLegs[1] === nm("EGKK", "EGKB") && dSwap.altLegs[0] !== d.altLegs[0]);
-const dHalf = f.computeFuel({ ...dEx, alts: ["EGKB"] });
-check("Scenario D: leg 1 is reported as soon as alternate 1 is chosen (plan still incomplete)", dHalf.altLegs.length === 1 && dHalf.altLegs[0] === l1 && dHalf.incomplete === "alternate" && dHalf.required === null);
-check("B/C: single leg destination→alternate reported", f.computeFuel(base).altLegs.length === 1 && f.computeFuel(base).altLegs[0] === 19);
+// ── William Harvey with fuel + REFUEL HERE ──
+const dW = clone(f.DATA); dW.sites.find((s) => s.id === "EGKD").fuel = true;
+const PW = f.makePlanner(dW);
+const tW = trip(); tW.refuel[1] = true;
+const rW = PW.computeTrip(tW);
+check(`WHH given fuel + REFUEL HERE: min to lift EGKR 437, EGKD stays 565 (${gates(rW).join(", ")})`, eq(gates(rW).slice(0, 2), [437, 565]));
+check("refuel stop: arrive with 243, uplift at least 322, leave with 565", rW.planned[1] === 243 && rW.uplift[1] === 322 && rW.fuel[1] === 565);
+check("shipped data: William Harvey has NO fuel, so REFUEL there is ignored (759 stands)", S("EGKD").fuel === false && S("EGKD").fuel_planned === true && eq(gates(P.computeTrip(tW)), [759, 565, 365]));
 
-// ── Verdict, flags ──
-const short = f.computeFuel({ ...base, fob: b.required - 10 });
-check("SHORT when FOB < REQUIRED, margin negative", short.verdict === "SHORT" && short.margin === -10);
-const zero = f.computeFuel({ ...base, fob: b.required });
-check("margin exactly 0 is ENOUGH", zero.verdict === "ENOUGH" && zero.margin === 0);
-check("engine-failure note when 0 ≤ margin < 75", zero.flags.some((x) => /engine-failure 15-min hold \(75 kg\)/.test(x)));
-const m74 = f.computeFuel({ ...base, fob: b.required + 74 });
-const m75 = f.computeFuel({ ...base, fob: b.required + 75 });
-check("engine-failure note at margin 74, not at 75", m74.flags.length === 1 && m75.flags.length === 0);
-check("no engine-failure note when SHORT (shortfall is the message)", short.flags.length === 0);
-check("no FOB → no verdict, no margin", f.computeFuel({ ...base, fob: null }).verdict === null && f.computeFuel({ ...base, fob: null }).margin === null);
-check("usable-fuel flag when REQUIRED > 904", f.computeFuel({ ...base, discretionary: 900 }).flags.some((x) => /usable fuel \(904 kg\)/.test(x)));
+// ── a fourth sector EGKR → EGKK ──
+for (const [sc, want] of [["VMC", [790, 596, 396, 260]], ["A", [930, 736, 536, 400]], ["D", [901, 707, 507, 371]]]) {
+  const r = P.computeTrip(withSector(trip(), "EGKK", sc));
+  check(`4th sector EGKR→EGKK profile ${sc}: ${want.join(", ")} (${gates(r).join(", ")})`, eq(gates(r), want));
+}
+const rD = P.computeTrip(withSector(trip(), "EGKK", "D"));
+check("D: alternates default to EGKB + EGKA, fuel to the FARTHER (Shoreham)", rD.sec[3].a1.id === "EGKB" && rD.sec[3].a2.id === "EGKA" && rD.sec[3].far.id === "EGKA");
+check("D: one approach at the farther alternate only (2 in all)", rD.sec[3].rows.filter((x) => /approach/i.test(x.item)).length === 2);
+const rB = P.computeTrip(withSector(trip(), "EGKK", "B"));
+const rC = P.computeTrip(withSector(trip(), "EGKK", "C"));
+check("B and C carry the same fuel", eq(gates(rB), gates(rC)) && rB.sec[3].a1.id === "EGKB");
+const rA = P.computeTrip(withSector(trip(), "EGKK", "A"));
+check("A: 2 approaches + 15 min (70) + reserve, no alternate", rA.sec[3].needAlts === 0 && rA.sec[3].rows.some((x) => x.item === "Additional" && x.kg === 70) && rA.sec[3].rows.some((x) => x.item === "IFR Approaches" && x.kg === 140));
 
-// ── Editable inputs ──
-check("approach stepper: +1 approach adds 70 kg", f.computeFuel({ ...base, approaches: 3 }).required === b.required + 70);
-check("0 approaches allowed", f.computeFuel({ ...base, approaches: 0 }).required === b.required - 140);
-check("start & taxi editable", f.computeFuel({ ...base, startTaxi: 50 }).required === b.required + 20);
-check("discretionary editable", f.computeFuel({ ...base, discretionary: 40 }).required === b.required + 40);
+// ── profiles by destination (OMA 8H 8.3.2.7.4 / 8.3.2.7.7) ──
+for (const id of ["EGKD", "EGKC", "EGRS", "EGGB", "EGKR"]) {
+  const p = P.profilesFor(S(id));
+  check(`PinS destination ${id}: only C and D, default C`, eq(p.allowed, ["C", "D"]) && p.default === "C");
+}
+check("Shoreham destination (RNP only): A not offered", !P.profilesFor(S("EGKA")).allowed.includes("A") && P.profilesFor(S("EGKA")).default === "B");
+for (const id of ["EGKK", "EGKB", "EGMD", "EGMC", "EGHI", "EGLL", "EGLC", "EGSS"]) check(`${id} destination: all five profiles, default B`, eq(P.profilesFor(S(id)).allowed, ["VMC", "A", "B", "C", "D"]) && P.profilesFor(S(id)).default === "B");
+const rPin = P.computeTrip(trip({ scen: ["B", "VMC", "A"] }));
+check("a PinS sector asked for B / VMC / A falls back to C", rPin.sec.every((s) => s.sc === "C"));
 
-// ── Calm incomplete states (never throw) ──
-const none = f.computeFuel({ scenario: "B", alts: [] });
-check("no route → incomplete 'route', no REQUIRED", none.incomplete === "route" && none.required === null);
-check("origin only → incomplete 'route'", f.computeFuel({ ...base, dest: "" }).incomplete === "route");
-const noAlt = f.computeFuel({ ...base, alts: [] });
-check("B with no alternate → incomplete 'alternate', lines shown, no REQUIRED", noAlt.incomplete === "alternate" && noAlt.lines.length > 0 && noAlt.required === null);
-check("D with one alternate → still incomplete", f.computeFuel({ ...base, scenario: "D", alts: ["EGKK"] }).incomplete === "alternate");
-check("origin = destination → incomplete 'same'", f.computeFuel({ ...base, dest: "EGKR" }).incomplete === "same");
-check("unknown scenario → incomplete, no throw", f.computeFuel({ ...base, scenario: "Z" }).incomplete === "scenario");
+// ── alternate validity (OMA 8.1.3.3.2; PinS 8.3.2.7.4) ──
+const ids = (list) => list.map((s) => s.id);
+check("PinS destination: alternate list excludes Shoreham (GNSS-only)", !ids(P.alternatesFor(S("EGKC"))).includes("EGKA"));
+check("Gatwick destination (has ILS): alternate list includes Shoreham", ids(P.alternatesFor(S("EGKK"))).includes("EGKA"));
+check("Shoreham destination: only alternates with a non-GNSS approach", P.alternatesFor(S("EGKA")).every((s) => P.nonGnss(s)));
+check("Redhill is never an alternate (its only procedure is a PLANNED PinS)", f.DATA.sites.filter((s) => s.type === "airfield_ifr").every((d) => !ids(P.alternatesFor(d)).includes("EGKR")));
+check("PinS sites are never alternates", f.DATA.sites.every((d) => P.alternatesFor(d).every((s) => s.type === "airfield_ifr")));
+check("alternates sorted nearest first", (() => { const l = P.alternatesFor(S("EGKC")); return l.every((s, i) => i === 0 || f.haversineNm(S("EGKC"), l[i - 1]) <= f.haversineNm(S("EGKC"), s)); })());
+const tChosen = trip(); tChosen.alt[0] = "EGKK";
+const rChosen = P.computeTrip(tChosen);
+check("a chosen alternate is used and marked 'chosen' (not nearest); it changes that sector's own requirement", rChosen.sec[0].a1.id === "EGKK" && !rChosen.sec[0].auto && rChosen.sec[0].own !== r0.sec[0].own);
+check("…but the minimum to lift stays 759 there, because the onward chain governs that sector", rChosen.sec[0].useOnward && rChosen.sec[0].gate === 759);
+const tBad = trip(); tBad.alt[0] = "EGKA"; // Shoreham is not valid for a PinS destination
+check("an invalid stored alternate falls back to the nearest valid one", P.computeTrip(tBad).sec[0].a1.id === "EGMD");
 
-// ── Scenario hints (printed inside the buttons) ──
-check("every scenario has a two-line hint", f.SCENARIO_ORDER.every((k) => Array.isArray(f.SCENARIO_HINT[k]) && f.SCENARIO_HINT[k].length === 2));
-check("hints state the plan type (alternates / approaches)", /NO ALTN/.test(f.SCENARIO_HINT.A[0]) && /2 APPS/.test(f.SCENARIO_HINT.A[1]) && /1 ALTN/.test(f.SCENARIO_HINT.B[0]) && /2 ALTN/.test(f.SCENARIO_HINT.D[0]));
-check("D descriptor describes the sequence", /alternate 1 → alternate 2/.test(f.SCENARIO_TEXT.D));
+// ── actual fuel below minimum ──
+const tLow = trip(); tLow.actual[1] = "400";
+const rLow = P.computeTrip(tLow);
+check("actual 400 at EGKD (min 565): margin −165", rLow.margin[1] === -165);
+check("later planned figures follow the entered value (EGKC 200, landing 64)", rLow.planned[2] === 200 && rLow.fuel[2] === 200 && rLow.landing === 64);
 
-// ── Approaches: info line text + where the 70 kg per approach is allocated ──
-const ap = (id) => f.approachSummary(id).join(" · ");
-check("approach list: Biggin Hill ILS 21 · RNP 21 · RNP 03 (RF, new 2026)", ap("EGKB") === "ILS 21 · RNP 21 · RNP 03 (RF, NEW 2026)");
-check("approach list: Shoreham is RNP only (no ILS, no NDB)", ap("EGKA") === "RNP 02/20");
-check("approach list: Lydd ILS · RNP · NDB", ap("EGMD") === "ILS 21 · RNP 21 · NDB 03");
-check("approach list: Heathrow runways 'all' reads ALL RWYS", ap("EGLL") === "ILS ALL RWYS · RNP ALL RWYS");
-check("approach list: London City carries its steep-approach note", /ILS 09\/27 \(5\.5° STEEP — AW169 APPROVED\)/.test(ap("EGLC")));
-check("approach list: Redhill / hospitals / unknown ids list nothing", ap("EGKR") === "" && ap("H_KCH") === "" && ap("NOPE") === "");
-check("approach list length matches the dataset for every selectable field", f.destSites().every((x) => f.approachSummary(x.id).length === x.approaches.length));
-const appD = line(f.computeFuel(dEx), "approaches");
-check("D: 3 approaches = one 70 kg allowance at EACH airfield (210 kg)", appD.kg === 210 && appD.sub === "EGMD 1 · EGKB 1 · EGKK 1");
-check("A: two approaches at the destination", line(f.computeFuel({ ...base, scenario: "A", alts: [] }), "approaches").sub === "EGKA 2");
-check("VMC: one approach at the destination", line(f.computeFuel({ ...base, scenario: "VMC", alts: [] }), "approaches").sub === "EGKA 1");
-check("B before an alternate is chosen: destination + placeholder", line(f.computeFuel({ ...base, alts: [] }), "approaches").sub === "EGKA 1 · ALTN 1");
-check("B with alternate chosen: names both fields (2 × 70 = 140)", line(b, "approaches").sub === "EGKA 1 · EGKK 1" && line(b, "approaches").kg === 140);
-check("stepper change is flagged as adjusted from the default", line(f.computeFuel({ ...dEx, approaches: 4 }), "approaches").sub === "ADJUSTED · DEFAULT 3");
+// ── refuel stop at an airfield with fuel breaks the chain ──
+const tRf = { stops: ["EGKR", "EGKD", "EGKK", "EGKC", "EGKR"], actual: ["", "", "", "", ""], refuel: [false, false, true, false, false], scen: [null, null, null, null], alt: [null, null, null, null], alt2: [null, null, null, null] };
+const rRf = P.computeTrip(tRf);
+check("REFUEL HERE at Gatwick: sector into Gatwick uses its own requirement, not the onward chain", !rRf.sec[1].useOnward && rRf.refuelAt[2] && rRf.sec[1].gate === rRf.sec[1].own);
+check("refuel flag ignored at the first and last stop", (() => { const t = trip(); t.refuel = [true, false, false, true]; const r = P.computeTrip(t); return !r.refuelAt[0] && !r.refuelAt[3] && eq(gates(r), [759, 565, 365]); })());
 
-// ── Dataset integrity ──
-const ifr = f.DATA.sites.filter((s) => s.type === "airfield_ifr");
-const dests = f.destSites().map((s) => s.id);
-const origins = f.originSites().map((s) => s.id);
-check("every airfield_ifr with approaches is selectable as dest/alt", ifr.filter((s) => (s.approaches || []).length).every((s) => dests.includes(s.id)));
-check("Redhill is origin-only (no approaches)", origins.includes("EGKR") && !dests.includes("EGKR"));
-check("every airfield_ifr is selectable as origin", ifr.every((s) => origins.includes(s.id)));
-check("refuel points and hospitals are display-only (not selectable)",
-  f.DATA.sites.filter((s) => s.type !== "airfield_ifr").every((s) => !origins.includes(s.id) && !dests.includes(s.id)));
-check("every hospital has a short label (≤ 5 chars) for the map", f.DATA.sites.filter((x) => x.type === "hospital").every((x) => x.short && x.short.length <= 5));
-const ss = f.siteById("EGSS");
-check("Stansted (EGSS) present as an IFR airfield at the published ARP 51.8850 N 0.2350 E", ss && ss.type === "airfield_ifr" && ss.lat === 51.885 && ss.lon === 0.235);
-check("Stansted selectable as ORIGIN", f.originSites().some((x) => x.id === "EGSS"));
-check("Stansted selectable as DESTINATION and ALTERNATE (has approaches)", f.destSites().some((x) => x.id === "EGSS"));
-check("Stansted approaches listed: ILS 04 · ILS 22 · RNP 04/22", f.approachSummary("EGSS").join(" · ") === "ILS 04 · ILS 22 · RNP 04/22");
-check("Stansted plans like any field (e.g. Redhill → Stansted, altn Southend, B)", (() => { const r = f.computeFuel({ origin: "EGKR", dest: "EGSS", alts: ["EGMC"], scenario: "B", fob: 600 }); return r.incomplete === null && r.tripNm > 40 && r.required > 0; })());
+// ── a two-stop trip reproduces the single-leg planner (profile B) ──
+const r2 = P.computeTrip({ stops: ["EGKR", "EGKA"], actual: ["500", ""], refuel: [false, false], scen: ["B"], alt: ["EGKK"], alt2: [null] });
+check(`two-stop Redhill→Shoreham, altn Gatwick, B: ${r2.sec[0].gate} kg ≈ single-leg 416 (±2)`, near(r2.sec[0].gate, 416, 2));
+
+// ── the rules really come from the dataset ──
+const d20 = clone(f.DATA); d20.oma_rules.contingency_pct_ifr = 20;
+check("contingency read from data (20% → bigger burns)", f.makePlanner(d20).computeTrip(trip()).sec[0].burn > 194);
+const dG = clone(f.DATA); dG.oma_rules.gnss_approach_types = ["LPV", "PinS"]; // pretend RNP were ground-based
+check("GNSS approach types read from data (Shoreham then valid for a PinS destination)", ids(f.makePlanner(dG).alternatesFor(S("EGKC"))).includes("EGKA"));
+const dP = clone(f.DATA); dP.oma_rules.profiles_by_destination.pins = { allowed: ["B", "C", "D"], default: "B" };
+check("profiles by destination read from data", f.makePlanner(dP).profilesFor(S("EGKC")).default === "B");
+const dA = clone(f.DATA); dA.oma_rules.multi_sector.approach_per_arrival = 2;
+check("approaches per arrival read from data", f.makePlanner(dA).computeTrip(trip()).sec[0].burn === 194 + 70);
+
+// ── PLANNED / CONFIRM tags and approach lines ──
+check("Redhill tagged PLANNED (its PinS is planned)", P.planStatus(S("EGKR")) === "planned");
+check("William Harvey / King's / Royal Sussex / East Brighton Park tagged CONFIRM", ["EGKD", "EGKC", "EGRS", "EGGB"].every((id) => P.planStatus(S(id)) === "confirm"));
+check("published airfields carry no tag", ["EGKK", "EGSS", "EGKA"].every((id) => P.planStatus(S(id)) === null));
+check("approach line: Biggin Hill ILS 21 · RNP 21 · RNP 03 (RF, NEW 2026)", f.approachSummary("EGKB").join(" · ") === "ILS 21 · RNP 21 · RNP 03 (RF, NEW 2026)");
+check("approach line: Redhill PinS (PLANNED); William Harvey PinS (CONFIRM)", f.approachSummary("EGKR").join() === "PinS (PLANNED)" && f.approachSummary("EGKD").join() === "PinS (CONFIRM)");
+
+// ── trip normalisation (stored trips) ──
+check("garbage / unknown stops → default trip", eq(P.normalizeTrip(null).stops, f.DEFAULT_TRIP.stops) && eq(P.normalizeTrip({ stops: ["EGKR", "XXXX"] }).stops, f.DEFAULT_TRIP.stops));
+check("short arrays are padded; non-digits stripped", (() => { const n = P.normalizeTrip({ stops: ["EGKR", "EGKK", "EGKC"], actual: ["8a20"] }); return n.actual.length === 3 && n.actual[0] === "820" && n.scen.length === 2 && n.refuel.length === 3; })());
+
+// ── dataset integrity ──
+const stops = ids(P.stopSites());
+check("stops = every IFR airfield and PinS site (incl. Stansted, Redhill)", f.DATA.sites.filter((s) => s.type === "airfield_ifr" || s.type === "pins_site").every((s) => stops.includes(s.id)) && stops.includes("EGSS") && stops.includes("EGKR"));
+check("other hospitals and VFR refuel points are not stops", f.DATA.sites.filter((s) => s.type === "hospital" || s.type === "refuel_vfr").every((s) => !stops.includes(s.id)));
+check("every hospital and PinS site has a short map label (≤ 5 chars)", f.DATA.sites.filter((s) => s.type === "hospital" || s.type === "pins_site").every((s) => s.short && s.short.length <= 5));
+check("PinS sites have no fuel; every airfield does", f.DATA.sites.filter((s) => s.type === "pins_site").every((s) => s.fuel === false) && f.DATA.sites.filter((s) => s.type === "airfield_ifr").every((s) => s.fuel === true));
 check("all sites have numeric lat/lon", f.DATA.sites.every((s) => Number.isFinite(s.lat) && Number.isFinite(s.lon)));
-check("all five scenarios present with defaults", f.SCENARIO_ORDER.every((k) => f.defaultApproaches(k) >= 1) && f.defaultApproaches("D") === 3);
+check("profile hints: D now reads FARTHER (not CHAIN)", f.SCENARIO_HINT.D.join(" ") === "2 ALTN FARTHER" && /farther/i.test(f.SCENARIO_TEXT.D));
 
 let fail = 0;
 for (const [n, ok] of res) { console.log((ok ? "PASS" : "FAIL") + "  " + n); if (!ok) fail++; }

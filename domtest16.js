@@ -1,139 +1,167 @@
-// IFR FUEL tab — UI tests against the built index.html.
+// IFR FUEL — multi-sector screen, UI tests against the built index.html (brief §4–§6).
 const { JSDOM, VirtualConsole } = require("jsdom");
 const fs = require("fs");
 const html = fs.readFileSync("./index.html", "utf8");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const emptyRows = () => Array.from({ length: 7 }, () => ({ fltTime: "", shtdwn: "", fuel: "", notes: "", refuel: false, upliftL: "", hems: false, hemsGrid: "", patientKg: "" }));
-const card = { date: "14.07.2026", acReg: "G-KSST", srp: "1234", gwDep: "4600", varField: "4650", vertField: "4550",
-  plannedFuel: "650", hoursAvail: "9:00", sunriseSet: "", rows: emptyRows(), misc: "", powerChecks: [] };
+const CARD = JSON.stringify({ date: "14.07.2026", acReg: "G-KSST", srp: "1234", gwDep: "4600", varField: "4650", vertField: "4550",
+  plannedFuel: "650", hoursAvail: "9:00", sunriseSet: "", rows: emptyRows(), misc: "", powerChecks: [] });
+const res = [];
+const check = (n, ok) => res.push([n, !!ok]);
 
-let netCalls = 0;
-const dom = new JSDOM(html, { runScripts: "dangerously", url: "https://x.github.io/", pretendToBeVisual: true,
-  virtualConsole: new VirtualConsole(),
-  beforeParse(w) {
-    w.localStorage.setItem("daily-flight-card", JSON.stringify(card));
-    // any network attempt by the app is a failure of the offline-first invariant
-    w.fetch = () => { netCalls++; return Promise.reject(new Error("network")); };
-    w.XMLHttpRequest = function () { netCalls++; throw new Error("network"); };
-    w.WebSocket = function () { netCalls++; throw new Error("network"); };
-    w.navigator.sendBeacon = () => { netCalls++; return false; };
-  } });
-const w = dom.window, d = w.document;
-const click = (el) => el.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
-const scen = (id) => d.querySelector(`button[data-scenario="${id}"]`);
-const btn = (t) => [...d.querySelectorAll("button")].find((b) => b.textContent.trim() === t);
-const text = () => d.getElementById("root").textContent;
-// IFR FUEL site dropdowns all start with a "SELECT" placeholder (the AC REG select does not)
-const selects = () => [...d.querySelectorAll("select")].filter((s) => s.options[0] && s.options[0].textContent === "SELECT");
-const selBy = (lab) => [...d.querySelectorAll("label")].find((l) => l.querySelector("span > span")?.textContent === lab)?.querySelector("select");
-const setSelect = async (sel, v) => { sel.value = v; sel.dispatchEvent(new w.Event("change", { bubbles: true })); await sleep(80); };
-const inputSetter = Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype, "value").set;
-const setInput = async (el, v) => { inputSetter.call(el, v); el.dispatchEvent(new w.Event("input", { bubbles: true })); await sleep(80); };
-const fobInput = () => [...d.querySelectorAll("input")].find((i) => i.previousElementSibling?.textContent?.trim() === "FUEL ON BOARD KG");
-const lineEl = (k) => d.querySelector(`[data-line="${k}"]`);
-const verdictEl = () => d.querySelector("[data-verdict]");
+function open(storedTrip) {
+  let net = 0;
+  const errors = [];
+  const vc = new VirtualConsole(); vc.on("jsdomError", (e) => errors.push(e.message));
+  const dom = new JSDOM(html, { runScripts: "dangerously", url: "https://x.github.io/", pretendToBeVisual: true, virtualConsole: vc,
+    beforeParse(w) {
+      w.localStorage.setItem("daily-flight-card", CARD);
+      if (storedTrip !== undefined) w.localStorage.setItem("ifr-fuel-trip", storedTrip);
+      w.fetch = () => { net++; return Promise.reject(new Error("network")); };
+      w.XMLHttpRequest = function () { net++; throw new Error("network"); };
+      w.WebSocket = function () { net++; throw new Error("network"); };
+    } });
+  const w = dom.window, d = w.document;
+  const q = (sel) => d.querySelector(sel);
+  const qa = (sel) => [...d.querySelectorAll(sel)];
+  const tx = (sel) => (q(sel) ? q(sel).textContent : "");
+  const click = (el) => el.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
+  const btn = (t) => qa("button").find((b) => b.textContent.trim() === t);
+  const setSelect = async (el, v) => { el.value = v; el.dispatchEvent(new w.Event("change", { bubbles: true })); await sleep(60); };
+  const setter = Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype, "value").set;
+  const type = async (el, v) => { setter.call(el, v); el.dispatchEvent(new w.Event("input", { bubbles: true })); await sleep(60); };
+  const mins = () => qa("[data-min]").map((e) => e.textContent.trim());
+  const stopSel = (i) => q(`select[aria-label="stop ${i + 1}"]`);
+  return { w, d, q, qa, tx, click, btn, setSelect, type, mins, stopSel, net: () => net, errors, store: () => w.localStorage.getItem("ifr-fuel-trip"), card: () => w.localStorage.getItem("daily-flight-card") };
+}
 
 (async () => {
+  const A = open();
   await sleep(2500);
-  const res = [];
-  const check = (n, ok) => res.push([n, !!ok]);
-
-  // ── tab bar ──
-  const labels = [...d.querySelectorAll("button")].slice(0, 5).map((b) => b.textContent.trim());
-  check("tab bar: A/C DATA · FLIGHTS · UPLIFT · IFR FUEL", labels.slice(0, 4).join("|") === "A/C DATA|FLIGHTS|UPLIFT|IFR FUEL");
-  check("tab labels never wrap (nowrap)", [...d.querySelectorAll("button")].slice(0, 4).every((b) => b.style.whiteSpace === "nowrap"));
-
-  // ── empty state ──
+  const { q, qa, tx, click, btn, setSelect, type, mins, stopSel } = A;
   click(btn("IFR FUEL")); await sleep(200);
-  check("empty state: calm 'select origin and destination'", verdictEl().textContent.includes("SELECT ORIGIN AND DESTINATION"));
-  check("empty state: no breakdown table yet", !lineEl("trip"));
-  check("empty state: no approaches info lines yet", d.querySelectorAll("[data-approaches]").length === 0);
-  check("disclaimer shown", text().includes("Planning cross-check only — not a certified flight-planning tool. Verify against the OFP and current plates."));
-  let [selO, selD, selA] = selects();
-  check("three dropdowns: origin, destination, alternate", !!selO && !!selD && !!selA);
-  check("Redhill selectable as origin only", [...selO.options].some((o) => o.value === "EGKR") && ![...selD.options, ...selA.options].some((o) => o.value === "EGKR"));
-  check("scenario strip VMC · A · B · C · D", ["VMC", "A", "B", "C", "D"].every((s) => !!scen(s)));
-  check("scenario buttons carry a plan-type hint (A: NO ALTN / 2 APPS, B: 1 ALTN, D: 2 ALTN)", scen("A").textContent.includes("NO ALTN") && scen("A").textContent.includes("2 APPS") && scen("B").textContent.includes("1 ALTN") && scen("D").textContent.includes("2 ALTN"));
-  check("scenario descriptor shown (default B)", text().includes("One alternate."));
 
-  // ── worked example: Redhill → Shoreham, altn Gatwick, B, 500 kg ──
-  await setSelect(selO, "EGKR");
-  [selO, selD, selA] = selects();
-  await setSelect(selD, "EGKA");
-  [selO, selD, selA] = selects();
-  check("origin hidden from destination list", ![...selD.options].some((o) => o.value === "EGKR"));
-  await setSelect(selA, "EGKK");
-  await setInput(fobInput(), "500");
-  const t = text();
-  check("distances shown: trip 23 NM, diversion 19 NM", t.includes("23 NM") && t.includes("19 NM"));
-  check("table lines present: start, trip, alternate, contingency, reserve, approaches, discretionary",
-    ["startTaxi", "trip", "alternate", "contingency", "finalReserve", "approaches", "discretionary"].every((k) => !!lineEl(k)));
-  const kgOf = (k) => parseInt([...lineEl(k).children].pop().textContent || [...lineEl(k).children].pop().querySelector("input")?.value, 10);
-  check("trip 50 kg, alternate 41 kg", kgOf("trip") === 50 && kgOf("alternate") === 41);
-  const req = parseInt(lineEl("required").lastElementChild.textContent, 10);
-  check(`REQUIRED ≈ 415 (${req})`, Math.abs(req - 415) <= 2);
-  check("verdict ENOUGH +margin (≈ +85)", /ENOUGH \+8[3-7] KG/.test(verdictEl().textContent));
-  const greenColor = verdictEl().style.color;
-  check("table headings SERIAL/REQUIREMENT/L/KG order", ["#", "REQUIREMENT", "L", "KG"].every((h) => t.includes(h)));
-  check("L column = kg ÷ 0.79 (trip 63 L)", lineEl("trip").textContent.includes("63"));
+  // ── default trip ──
+  check("default trip: 4 stop cards EGKR · EGKD · EGKC · EGKR", qa("[data-stop]").length === 4 && [0, 1, 2, 3].map((i) => stopSel(i).value).join() === "EGKR,EGKD,EGKC,EGKR");
+  check("3 collapsed sector lines between the cards", qa("[data-sector-line]").length === 3);
+  check("headline: REQUIRED TO LIFT EGKR 759 KG", tx("[data-headline]").includes("REQUIRED TO LIFT EGKR") && tx("[data-headline]").includes("759 KG"));
+  check("no fuel entered yet: calm 'ENTER FUEL AT EGKR', no ENOUGH/SHORT", tx("[data-verdict]") === "ENTER FUEL AT EGKR");
+  check("MIN TO LIFT 759 · 565 · 365", mins().join() === "759,565,365");
+  check("first stop shows no margin until fuel is entered", tx('[data-margin="0"]') === "—");
+  check("last stop shows only PLANNED ON LANDING", !q('[data-stop="3"] [data-min]') && !!q("[data-landing]"));
+  check("collapsed view: exactly three numbers per stop (min, actual, margin)", [0, 1, 2].every((i) => qa(`[data-stop="${i}"] [data-min], [data-stop="${i}"] [data-actual], [data-stop="${i}"] [data-margin]`).length === 3 && qa(`[data-stop="${i}"] input`).length === 1));
+  check("sector line: → EGKD · 39 nm · C · ALTN EGMD · 194 KG", tx('[data-sector-line="0"]').includes("→ EGKD · 39 nm · C · ALTN EGMD") && tx('[data-sector-line="0"]').includes("194 KG"));
+  check("sector lines 2 and 3 name EGLC and EGKK; burns 200 and 136", tx('[data-sector-line="1"]').includes("ALTN EGLC") && tx('[data-sector-line="1"]').includes("200 KG") && tx('[data-sector-line="2"]').includes("ALTN EGKK") && tx('[data-sector-line="2"]').includes("136 KG"));
+  check("PLANNED tag on Redhill; CONFIRM on William Harvey and King's", tx('[data-stop="0"] [data-status]') === "PLANNED" && tx('[data-stop="1"] [data-status]') === "CONFIRM" && tx('[data-stop="2"] [data-status]') === "CONFIRM");
+  check("tagged sites remain selectable", stopSel(0).value === "EGKR" && [...stopSel(1).options].some((o) => o.value === "EGKR"));
+  check("stop list = IFR airfields + PinS sites only (no plain hospitals or VFR refuel points)", (() => { const v = [...stopSel(0).options].map((o) => o.value); return v.includes("EGSS") && v.includes("EGGB") && v.includes("EGKD") && !v.some((x) => /^H_/.test(x)) && !v.includes("EGMH") && !v.includes("EGTO"); })());
+  check("no REFUEL HERE at William Harvey (no fuel there yet)", !q('[data-stop="1"] [data-refuel]'));
+  check("no 'what if fuel at William Harvey' control shipped", !A.d.getElementById("root").textContent.toUpperCase().includes("WHAT IF"));
+  check("disclaimer shown", A.d.getElementById("root").textContent.includes("Planning cross-check only — not a certified flight-planning tool"));
 
-  // ── SHORT ──
-  await setInput(fobInput(), "300");
-  check("SHORT with negative margin", /SHORT -\d+ KG/.test(verdictEl().textContent));
-  check("SHORT is amber, ENOUGH was green (different colours)", verdictEl().style.color !== greenColor);
-  // ── engine-failure note ──
-  await setInput(fobInput(), String(req + 40));
-  check("engine-failure amber note when margin 0–74", text().includes("ENGINE-FAILURE 15-MIN HOLD (75 KG)"));
-  await setInput(fobInput(), "500");
+  // ── fuel entered ──
+  await type(q('[data-actual="0"]'), "820");
+  check("820 kg at EGKR: ENOUGH +61 KG", tx("[data-verdict]") === "ENOUGH +61 KG");
+  check("planned figures flow forward (placeholders 'plan 626', 'plan 426')", q('[data-actual="1"]').placeholder === "plan 626" && q('[data-actual="2"]').placeholder === "plan 426");
+  check("planned landing fuel 290 KG", tx("[data-landing]") === "290 KG");
+  check("margins +61 at EGKD and EGKC", tx('[data-margin="1"]') === "+61" && tx('[data-margin="2"]') === "+61");
+  await type(q('[data-actual="1"]'), "400");
+  check("400 at EGKD (min 565): margin −165 and the amber BELOW MINIMUM message", tx('[data-margin="1"]') === "-165" && tx('[data-warn="1"]').includes("BELOW MINIMUM — IFR DEPARTURE NOT AVAILABLE. REFUEL BEFORE CONTINUING, OR HOLD FOR WEATHER."));
+  check("later planned figures follow the entered value (EGKC plan 200, landing 64 KG)", q('[data-actual="2"]').placeholder === "plan 200" && tx("[data-landing]") === "64 KG");
+  await type(q('[data-actual="0"]'), "700");
+  check("start fuel below the requirement: SHORT -59 KG", tx("[data-verdict]") === "SHORT -59 KG");
+  await type(q('[data-actual="1"]'), ""); await type(q('[data-actual="0"]'), "820");
 
-  // ── stepper ──
-  const inc = [...d.querySelectorAll('button[aria-label="more approaches"]')][0];
-  click(inc); await sleep(80);
-  check("approach stepper +: 3 approaches, 210 kg", kgOf("approaches") === 210);
-  const dec = [...d.querySelectorAll('button[aria-label="fewer approaches"]')][0];
-  click(dec); click(dec); await sleep(80);
-  check("approach stepper −: 1 approach, 70 kg", kgOf("approaches") === 70);
+  // ── sector details ──
+  click(q('[data-sector-line="0"]')); await sleep(80);
+  const det = q('[data-detail="0"]');
+  check("tapping a sector line opens its details", !!det);
+  const chip = (i, c) => q(`[data-chip="${i}:${c}"]`);
+  check("PinS destination: only C and D offered (VMC, A, B disabled); C selected", ["VMC", "A", "B"].every((c) => chip(0, c).disabled) && !chip(0, "C").disabled && !chip(0, "D").disabled && chip(0, "C").getAttribute("aria-pressed") === "true");
+  check("profile chips carry their hints (C: 1 ALTN +800M, D: 2 ALTN FARTHER)", chip(0, "C").textContent.includes("1 ALTN") && chip(0, "C").textContent.includes("+800M") && chip(0, "D").textContent.includes("FARTHER"));
+  check("description explains why VMC/A/B are not offered for PinS", det.textContent.includes("PinS destination: VMC, A and B not offered (OMA 8.3.2.7.7"));
+  check("approaches lines for the destination and the alternate", tx('[data-detail="0"] [data-approaches="EGKD"]').includes("PinS (CONFIRM)") && tx('[data-detail="0"] [data-approaches="EGMD"]').includes("ILS 21 · RNP 21 · NDB 03"));
+  const pick = q('[data-detail="0"] select[data-alt-picker="alt"]');
+  check("alternate picker shows EGMD marked 'nearest'", pick.value === "EGMD" && det.textContent.includes("nearest"));
+  check("PinS destination: Shoreham is not in the alternate list", ![...pick.options].some((o) => o.value === "EGKA"));
+  const kgSum = qa('[data-detail="0"] [data-row]').reduce((a, r) => a + (+r.lastElementChild.textContent || 0), 0);
+  check(`table sums to the minimum to lift (${kgSum} = 759)`, kgSum === 759 && q('[data-row-total="0"]').textContent.includes("759"));
+  check("onward chain governs: table ends 'Onward — Min to lift EGKD'", qa('[data-detail="0"] [data-row]').pop().textContent.includes("Min to lift EGKD"));
+  await setSelect(pick, "EGKK");
+  check("choosing an alternate marks it 'chosen'; the minimum stays 759 (onward chain governs)", q('[data-detail="0"]').textContent.includes("chosen") && mins()[0] === "759" && tx('[data-sector-line="0"]').includes("ALTN EGKK"));
 
-  // ── scenario A ──
-  click(scen("A")); await sleep(120);
-  check("A: no Alternate line and no alternate dropdown", !lineEl("alternate") && selects().length === 2);
-  check("A: PinS / 2-app 70 kg line present", !!lineEl("pins") && kgOf("pins") === 70);
-  check("A: approaches reset to scenario default 2", kgOf("approaches") === 140);
-  // ── scenario VMC ──
-  click(scen("VMC")); await sleep(120);
-  check("VMC: no Alternate, no PinS, approaches default 1", !lineEl("alternate") && !lineEl("pins") && kgOf("approaches") === 70);
-  // ── scenario D ──
-  click(scen("D")); await sleep(120);
-  check("D: two alternate dropdowns (4 selects incl. origin/dest), approaches default 3", selects().length === 4 && kgOf("approaches") === 210);
-  check("D with no alternates chosen: asks for both", verdictEl().textContent.includes("SELECT BOTH ALTERNATES"));
-  check("D: ALTERNATE 1 / ALTERNATE 2 labels", !!selBy("ALTERNATE 1") && !!selBy("ALTERNATE 2"));
-  await setSelect(selBy("ALTERNATE 1"), "EGKK");
-  await setSelect(selBy("ALTERNATE 2"), "EGMD");
-  check("D: alternate line names the chain EGKA → EGKK → EGMD", lineEl("alternate").textContent.includes("EGKA → EGKK → EGMD"));
-  check("D: ALTERNATE 2 distance is quoted FROM alternate 1", text().includes("NM FROM EGKK"));
-  const apLine = (id) => d.querySelector(`[data-approaches="${id}"]`)?.textContent || "";
-  check("approaches info line under destination (EGKA: RNP 02/20)", apLine("EGKA").includes("APPROACHES") && apLine("EGKA").includes("RNP 02/20"));
-  check("approaches info line under alternate 1 (EGKK: ILS 08R/26L · RNP 08R/26L)", apLine("EGKK").includes("ILS 08R/26L") && apLine("EGKK").includes("RNP 08R/26L"));
-  check("approaches info line under alternate 2 (EGMD: ILS 21 · RNP 21 · NDB 03)", apLine("EGMD").includes("ILS 21 · RNP 21 · NDB 03"));
-  check("exactly three info lines (destination + two alternates, none for origin)", d.querySelectorAll("[data-approaches]").length === 3);
-  check("approach line in the table shows 70 kg allocated at each airfield", lineEl("approaches").textContent.includes("EGKA 1 · EGKK 1 · EGMD 1") && kgOf("approaches") === 210);
-  // ── back to B, alternate missing → asks ──
-  click(scen("B")); await sleep(120);
-  check("back to B: single ALTERNATE dropdown, Gatwick kept (41 kg)", selects().length === 3 && selBy("ALTERNATE").value === "EGKK" && kgOf("alternate") === 41);
+  // ── a fourth sector ──
+  click(q("[data-add-sector]")); await sleep(80);
+  check("+ ADD SECTOR adds a stop (EGKK) and a sector line", qa("[data-stop]").length === 5 && stopSel(4).value === "EGKK" && qa("[data-sector-line]").length === 4);
+  check("Gatwick destination defaults to B", tx('[data-sector-line="3"]').includes("· B ·"));
+  click(q('[data-sector-line="3"]')); await sleep(80);
+  check("Gatwick destination offers all five profiles", ["VMC", "A", "B", "C", "D"].every((c) => !chip(3, c).disabled));
+  check("Gatwick destination: Shoreham IS in the alternate list", [...q('[data-detail="3"] select[data-alt-picker="alt"]').options].some((o) => o.value === "EGKA"));
+  // sector 0 still has a chosen alternate (EGKK); set it back so the brief's numbers apply
+  await setSelect(q('[data-detail="0"] select[data-alt-picker="alt"]'), "EGMD");
+  for (const [c, want] of [["VMC", "790,596,396,260"], ["A", "930,736,536,400"], ["D", "901,707,507,371"]]) {
+    click(chip(3, c)); await sleep(60);
+    check(`profile ${c} on EGKR→EGKK: ${want}`, mins().join() === want);
+  }
+  check("D shows a 2nd alternate picker (EGKB + EGKA)", q('[data-detail="3"] select[data-alt-picker="alt"]').value === "EGKB" && q('[data-detail="3"] select[data-alt-picker="alt2"]').value === "EGKA" && tx('[data-sector-line="3"]').includes("ALTN EGKB+EGKA"));
+  await setSelect(stopSel(4), "EGKA");
+  check("changing a destination resets that sector's profile to its default (Shoreham → B)", tx('[data-sector-line="3"]').includes("· B ·"));
+  check("Shoreham destination: A not offered", chip(3, "A").disabled && !chip(3, "B").disabled);
+  await setSelect(stopSel(4), "EGKK");
 
-  // ── other tabs unaffected ──
-  click(btn("FLIGHTS")); await sleep(200);
-  check("FLIGHTS tab still renders after visiting IFR FUEL", text().includes("FLT MIN") && text().includes("DEP GW 4600KG"));
-  click(btn("A/C DATA")); await sleep(200);
-  check("A/C DATA tab still renders (VERT TOW present)", text().includes("VERT TOW KG"));
-  click(btn("UPLIFT")); await sleep(200);
-  check("UPLIFT tab still renders", text().includes("FUEL UPLIFT"));
-  check("version stamp still shown", /v\d+ · \d{2}\.\d{2}\.\d{4}/.test(text()));
+  // ── refuel stop ──
+  check("REFUEL HERE offered at a mid-trip stop with fuel (Redhill, stop 4)", !!q('[data-stop="3"] [data-refuel]') && !q('[data-stop="0"] [data-refuel]') && !q('[data-stop="4"] [data-refuel]'));
+  const before = mins()[2];
+  click(q('[data-stop="3"] [data-refuel]')); await sleep(80);
+  check("REFUEL HERE on: input becomes AFTER REFUEL KG", q('[data-stop="3"]').textContent.includes("AFTER REFUEL KG"));
+  check("…and shows ARRIVE WITH n KG plus the uplift (or no uplift needed)", /FUEL STOP — ARRIVE WITH \d+ KG · (UPLIFT AT LEAST \d+ KG|NO UPLIFT NEEDED TO CONTINUE)/.test(tx("[data-refuel-msg]")));
+  check("…and breaks the chain: EGKC's minimum drops to its own requirement", +mins()[2] < +before);
+  click(q('[data-stop="3"] [data-refuel]')); await sleep(80);
+  check("REFUEL HERE off restores the chain", mins()[2] === before);
 
-  // ── offline invariant ──
-  check("IFR FUEL made no network calls (fetch/XHR/WebSocket/beacon)", netCalls === 0);
+  // ── remove stops ──
+  click(q('[data-remove="4"]')); await sleep(80);
+  check("✕ removes a stop", qa("[data-stop]").length === 4 && mins().join() === "759,565,365");
+  click(q('[data-remove="3"]')); await sleep(60); click(q('[data-remove="2"]')); await sleep(60);
+  check("minimum two stops: no ✕ when only two remain", qa("[data-stop]").length === 2 && qa("[data-remove]").length === 0);
+
+  // ── persistence + RESET TRIP ──
+  const stored = JSON.parse(A.store());
+  check("trip persisted under its own key (ifr-fuel-trip)", Array.isArray(stored.stops) && stored.stops.length === 2 && stored.actual[0] === "820");
+  check("the flight card's storage is untouched", A.card() === CARD);
+  const B = open(A.store());
+  await sleep(2500);
+  B.click(B.btn("IFR FUEL")); await sleep(200);
+  check("reopening the app restores the stored trip", B.qa("[data-stop]").length === 2 && B.q('[data-actual="0"]').value === "820");
+  click(q("[data-reset]")); await sleep(60);
+  check("RESET TRIP asks first", !!q("[data-reset-confirm]") && qa("[data-stop]").length === 2);
+  click(q("[data-reset-cancel]")); await sleep(60);
+  check("cancel keeps the trip", qa("[data-stop]").length === 2);
+  click(q("[data-reset]")); await sleep(60); click(q("[data-reset-confirm]")); await sleep(80);
+  check("RESET restores the default trip with nothing entered", mins().join() === "759,565,365" && q('[data-actual="0"]').value === "" && JSON.parse(A.store()).stops.join() === "EGKR,EGKD,EGKC,EGKR");
+  check("RESET leaves the flight card's storage untouched", A.card() === CARD);
+
+  // ── robustness ──
+  const C = open("{not json");
+  await sleep(2500);
+  C.click(C.btn("IFR FUEL")); await sleep(200);
+  check("corrupt stored trip: falls back to the default trip, no crash", C.mins().join() === "759,565,365" && C.errors.length === 0);
+  const D = open(JSON.stringify({ stops: ["EGKR", "NOPE"] }));
+  await sleep(2500);
+  D.click(D.btn("IFR FUEL")); await sleep(200);
+  check("stored trip naming an unknown site: falls back to the default trip", D.mins().join() === "759,565,365");
+
+  // ── other tabs + offline ──
+  click(btn("FLIGHTS")); await sleep(150);
+  check("FLIGHTS tab unaffected", A.d.getElementById("root").textContent.includes("FLT MIN"));
+  click(btn("A/C DATA")); await sleep(150);
+  check("A/C DATA tab unaffected", A.d.getElementById("root").textContent.includes("VERT TOW KG"));
+  click(btn("UPLIFT")); await sleep(150);
+  check("UPLIFT tab unaffected", A.d.getElementById("root").textContent.includes("FUEL UPLIFT"));
+  check("no runtime network calls", A.net() === 0 && B.net() === 0);
+  check("no script errors", A.errors.length === 0 && B.errors.length === 0);
 
   let fail = 0;
   for (const [n, ok] of res) { console.log((ok ? "PASS" : "FAIL") + "  " + n); if (!ok) fail++; }
   process.exit(fail ? 1 : 0);
-})();
+})().catch((e) => { console.log("FAIL  harness crashed: " + e.stack); process.exit(1); });

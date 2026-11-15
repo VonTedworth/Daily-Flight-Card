@@ -14,6 +14,8 @@ crew relies on.
 - `domtest*.js` — jsdom regression tests, run via `npm test`. They load the BUILT
   html, seed localStorage in `beforeParse`, and assert on rendered text/DOM.
   domtest10/11 cover the page split + carry-over; keep them green.
+- `multisector-build-brief.md` + `prototype-fuel-multisector.html` — the IFR FUEL spec and the
+  approved prototype whose `compute()` the engine ports (reference numbers in brief §6).
 - `src/fuelcalc.js` + `src/fuel-planner-dataset.json` — the IFR FUEL tab's pure calc engine
   and its bundled data (OMA 8H / OMB B34 figures). Unit-tested directly via
   `build/fuelcalc.cjs` (emitted by `npm run build`; domtest15). Edit figures in the
@@ -98,8 +100,12 @@ should still be bumped every time.
   update must never reload or interrupt an open session.
 - The IFR FUEL tab is an unregulated cross-check: the "Planning cross-check only —
   not a certified flight-planning tool" disclaimer must stay visible. It is fully
-  offline — **no network request of any kind** (domtest16 fails the build if one
-  is made), no data stored, and it never touches the card or other tabs.
+  offline — **no network request of any kind** (domtest16/17 fail if one is made). It
+  stores only its own trip under `ifr-fuel-trip` and never touches the flight card's
+  storage or the other tabs.
+- IFR FUEL follows the OMA — never less restrictive, not more restrictive. Rules live in
+  the dataset (`oma_rules`: gnss_approach_types, alternate_validity,
+  profiles_by_destination, multi_sector), not in code. PinS destinations: C/D only.
 
 ## Decisions log
 - July 2026 — WX/METAR tab investigated and rejected: aviationweather.gov
@@ -107,3 +113,13 @@ should still be bumped every time.
   15–25 min latency, losing to AeroWeather on the "must beat the existing
   way" test. Do not revisit without a use case that needs weather data
   inside a calculation rather than for display.
+- Nov 2026 — IFR FUEL rebuilt as a multi-sector trip planner (brief + prototype in the repo).
+  Scenario D changed from "dest → alt1 → alt2 chained, 3 approaches" (Ed's earlier rule) back
+  to the OMA "fuel to the farther of the two alternates, 2 approaches", at Ed's direction.
+  Dropped with the single-leg planner: the approach stepper, discretionary fuel, editable
+  start & taxi, the engine-failure (<75 kg) and usable-fuel (904 kg) notes. Kept: profile
+  hints and the approaches lines (now inside each sector's details). The map no longer
+  selects fields; it draws the route and tapping a site shows what it is.
+- Open items (brief §7, kept as data, awaiting confirmation): contingency 10% per sector
+  planned as used; no PinS plan without an alternate; PinS procedure status; site
+  coordinates (EGGB user-supplied); OMA PinS text provisional.

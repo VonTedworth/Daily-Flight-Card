@@ -1,6 +1,11 @@
-// IFR FUEL planner — pure calculation engine. No DOM, no network: every
-// constant comes from the bundled fuel-planner-dataset.json (OMA 8H / OMB B34).
-// Kept separate from app.jsx so it can be unit-tested directly (domtest15).
+// IFR FUEL planner — pure calculation engine. No DOM, no network: every constant and rule
+// comes from the bundled fuel-planner-dataset.json (OMA 8H / OMB B34). Kept separate from
+// app.jsx so it can be unit-tested directly (domtest15).
+//
+// MULTI-SECTOR (brief: multisector-build-brief.md). A trip is a list of stops; each sector
+// i → i+1 has its own weather profile and alternate(s). The maths is a port of the approved
+// prototype's compute() (prototype-fuel-multisector.html); nothing here is invented — every
+// figure and rule is read from the dataset passed to makePlanner().
 import DATA from "./fuel-planner-dataset.json";
 import GEO from "./map-geometry.json";
 
@@ -8,38 +13,40 @@ export { DATA };
 export const AC = DATA.aircraft;
 export const SCENARIO_ORDER = ["VMC", "A", "B", "C", "D"];
 
-// Plain-English descriptor shown under the scenario strip
-// (OMA 8H 8.1.3.3.2 / approach-minima-reference.md Part 3).
+// Profile descriptions (from the approved prototype; OMA 8H 8.1.3.3.2).
 export const SCENARIO_TEXT = {
-  VMC: "Destination forecast VMC for 1 hr either side of ETA. No alternate; fuel for one approach.",
-  A: "Two independent approaches at one field (ceiling ≥ DH + 400 ft, vis ≥ 3000 m). No alternate; 15 min added to trip fuel.",
-  B: "One alternate. Alternate forecast ≥ RVR/vis + 400 m and ceiling ≥ DH/MDH + 200 ft. Full diversion fuel + approaches.",
-  C: "One alternate, weather below minima has reasonable probability: alternate ≥ RVR/vis + 800 m, ceiling ≥ DH/MDH + 400 ft. Fuel as B.",
-  D: "Two alternates planned in sequence: destination → alternate 1 → alternate 2. Fuel covers the whole chain. Three approaches by default.",
+  VMC: "Destination forecast VMC for approach and landing, 1 hr either side of ETA. No alternate.",
+  A: "Two approaches on independent aids at the destination. Ceiling ≥ minima + 400 ft, vis ≥ 3000 m. No alternate: carry both approaches + 15 min.",
+  B: "One alternate. Alternate forecast ≥ RVR/VIS + 400 m, ceiling ≥ DH/MDH + 200 ft.",
+  C: "One alternate; destination weather from an uncertified source (e.g. SkylinkPro at a PinS site). Alternate forecast ≥ RVR/VIS + 800 m, ceiling ≥ DH/MDH + 400 ft. Same fuel as B.",
+  D: "Two alternates. Fuel planned to the farther one.",
 };
+export const PINS_NOTE = "PinS destination: VMC, A and B not offered (OMA 8.3.2.7.7; site weather uncertified).";
 
-// Two-line hint printed inside each scenario button, so the plan type is readable at a glance.
+// Two-line hint printed inside each profile button, so the plan type reads at a glance.
 export const SCENARIO_HINT = {
   VMC: ["NO ALTN", "1 APP"],
   A: ["NO ALTN", "2 APPS"],
   B: ["1 ALTN", "+400M"],
   C: ["1 ALTN", "+800M"],
-  D: ["2 ALTN", "CHAIN"],
+  D: ["2 ALTN", "FARTHER"],
 };
 
-// Published approaches at a field, for the information line under each selected airfield.
+// Published approaches at a site, for the information lines in each sector's details.
 // (Types/runways from the bundled dataset — verify against the current eAIP / company plate.)
 const APP_LABEL = {
   ILS: "ILS", LPV: "LPV", PAR: "PAR", RNP_LNAV: "RNP", RNP_LNAV_VNAV: "RNP VNAV", PinS: "PinS",
   LOC: "LOC", VOR_DME: "VOR/DME", VOR: "VOR", NDB_DME: "NDB/DME", NDB: "NDB",
   SRA_half_nm: "SRA", SRA_1_nm: "SRA", SRA_2_nm: "SRA",
 };
-export function approachSummary(id) {
-  const st = DATA.sites.find((x) => x.id === id);
+export function approachSummary(id, data = DATA) {
+  const st = data.sites.find((x) => x.id === id);
   if (!st || !st.approaches) return [];
   return st.approaches.map((a) => {
-    const rwy = String(a.rwy).toLowerCase() === "all" ? "ALL RWYS" : String(a.rwy).toUpperCase();
-    return `${APP_LABEL[a.type] || a.type.replace(/_/g, " ")} ${rwy}${a.note ? ` (${a.note.toUpperCase()})` : ""}`;
+    const r = String(a.rwy || "").trim();
+    const rwy = r.toLowerCase() === "all" ? " ALL RWYS" : r && r !== "-" ? " " + r.toUpperCase() : "";
+    const extra = [a.note && a.note.toUpperCase(), a.status && a.status.toUpperCase()].filter(Boolean).join(", ");
+    return `${APP_LABEL[a.type] || a.type.replace(/_/g, " ")}${rwy}${extra ? ` (${extra})` : ""}`;
   });
 }
 
@@ -55,116 +62,164 @@ export function haversineNm(a, b) {
   return (2 * EARTH_R_M * Math.asin(Math.sqrt(h))) / NM_M;
 }
 
-// Fuel for a leg at planning speed / cruise burn: round(nm ÷ 130 × 280).
+// Fuel for a leg at planning speed / cruise burn: round(nm ÷ 130 × 280), unrounded nm (as the prototype).
 export function legKg(nm) {
   return Math.round((nm / AC.plan_speed_kt) * AC.cruise_burn_kg_per_hr);
 }
-
 export const kgToL = (kg) => Math.round(kg / AC.fuel_density_kg_per_l);
-
 export const siteById = (id) => DATA.sites.find((s) => s.id === id) || null;
-// Origin: any IFR airfield. Destination / alternate: IFR airfield with ≥1 approach.
-export const originSites = () => DATA.sites.filter((s) => s.type === "airfield_ifr");
-export const destSites = () => originSites().filter((s) => (s.approaches || []).length > 0);
 
-export const defaultApproaches = (scenario) => DATA.oma_rules.scenarios[scenario].approaches_default;
-export const PIN_S_KG = Math.round((DATA.oma_rules.scenario_A_trip_add_min / 60) * AC.cruise_burn_kg_per_hr);
+export const DEFAULT_TRIP = Object.freeze({
+  stops: ["EGKR", "EGKD", "EGKC", "EGKR"],
+  actual: ["", "", "", ""],
+  refuel: [false, false, false, false],
+  scen: [null, null, null],
+  alt: [null, null, null],
+  alt2: [null, null, null],
+});
+export const freshTrip = () => JSON.parse(JSON.stringify(DEFAULT_TRIP));
 
-// Distances are rounded to whole nm first, so every kg figure in the table can be
-// reproduced by hand from the nm shown on screen.
-const wholeNm = (a, b) => Math.round(haversineNm(a, b));
+/** Build a planner over a dataset (tests pass modified copies; the app uses the bundled one). */
+export function makePlanner(data = DATA) {
+  const ac = data.aircraft, rules = data.oma_rules, ms = rules.multi_sector;
+  const GNSS = new Set(rules.gnss_approach_types);
+  const APP = ac.per_ifr_approach_kg, TAXI = ac.start_taxi_default_kg, RESERVE = ac.final_reserve_ifr_kg;
+  const PER_ARRIVAL = ms.approach_per_arrival;
+  const CONT = rules.contingency_pct_ifr / 100;
+  const site = (id) => data.sites.find((s) => s.id === id) || null;
+  const nm = (a, b) => haversineNm(a, b);
+  const leg = (d) => Math.round((d / ac.plan_speed_kt) * ac.cruise_burn_kg_per_hr);
+  const apps = (s) => (s && s.approaches) || [];
+  // An approach marked "planned" / "confirm" is not (yet) a usable procedure.
+  const usable = (a) => !a.status;
+  const nonGnss = (s) => apps(s).some((a) => usable(a) && !GNSS.has(a.type));
+  const isPins = (s) => s.type === "pins_site" || (apps(s).length > 0 && apps(s).every((a) => a.type === "PinS"));
+  // Independent aids: every GNSS procedure shares one aid; each ground-based procedure is its own.
+  const aids = (s) => new Set(apps(s).filter(usable).map((a) => (GNSS.has(a.type) ? "GNSS" : `${a.type}:${a.rwy}`))).size;
 
-/**
- * @param {object} p
- *  origin, dest: site ids; alts: array of site ids (0–2); scenario: VMC|A|B|C|D
- *  fob: kg on board (number|null); startTaxi, approaches, discretionary: kg/count (numbers)
- * @returns breakdown lines, REQUIRED, margin, verdict and indicative flags.
- *  Anything not yet selectable yields `incomplete` with a reason — never throws.
- */
-export function computeFuel(p) {
-  const sc = DATA.oma_rules.scenarios[p.scenario];
-  const origin = siteById(p.origin);
-  const dest = siteById(p.dest);
-  const out = { incomplete: null, tripNm: null, altnNm: null, altLegs: [], lines: [], required: null, margin: null, verdict: null, flags: [] };
-  if (!sc) { out.incomplete = "scenario"; return out; }
-  if (!origin || !dest) { out.incomplete = "route"; return out; }
-  if (origin.id === dest.id) { out.incomplete = "same"; return out; }
+  const stopSites = () => data.sites.filter((s) => s.type === "airfield_ifr" || s.type === "pins_site");
+  // "PLANNED"-style tag when a site's only approach(es) are not yet usable.
+  const planStatus = (s) => (apps(s).length && apps(s).every((a) => a.status) ? apps(s)[0].status : null);
+  const hasFuel = (s) => !!(s && s.fuel === true);
 
-  const tripNm = wholeNm(origin, dest);
-  out.tripNm = tripNm;
-  const trip = legKg(tripNm);
-  const contingency = Math.round((DATA.oma_rules.contingency_pct_ifr / 100) * trip);
+  function profilesFor(dest) {
+    const key = isPins(dest) ? "pins" : aids(dest) >= 2 ? "airfield" : "airfield_one_aid";
+    return { key, ...rules.profiles_by_destination[key] };
+  }
+  // OMA 8H 8.1.3.3.2 / 8.3.2.7.4: valid only if a non-GNSS approach exists at the alternate or
+  // at the destination. Only airfields with a usable approach can be alternates. Nearest first.
+  function alternatesFor(dest) {
+    return data.sites
+      .filter((s) => s.type === "airfield_ifr" && s.id !== dest.id && apps(s).some(usable) && (nonGnss(dest) || nonGnss(s)))
+      .sort((a, b) => nm(dest, a) - nm(dest, b));
+  }
 
-  // Alternate line: B/C one alternate (dest → alt). D: two alternates planned IN SEQUENCE —
-  // dest → alt1, then alt1 → alt2 — and the line covers the whole chain (sum of the legs).
-  // (Replaces the old "farther of the two from the destination" rule.)
-  let altKg = null;
-  let altLabel = "ALTERNATE";
-  let altSub = null;
-  const need = sc.alt_fuel ? sc.alternates : 0;
-  if (need) {
-    const chosen = (p.alts || []).slice(0, need).map(siteById);
-    // legs are reported as soon as their endpoints exist, even while the plan is incomplete
-    const legs = [];
-    if (chosen[0]) legs.push(wholeNm(dest, chosen[0]));
-    if (need === 2 && chosen[0] && chosen[1]) legs.push(wholeNm(chosen[0], chosen[1]));
-    out.altLegs = legs;
-    if (legs.length === need) {
-      const totalNm = legs.reduce((a, b) => a + b, 0);
-      out.altnNm = totalNm;
-      altKg = legKg(totalNm);
-      if (need === 2) {
-        altLabel = "ALTERNATES";
-        altSub = `${dest.icao} → ${chosen[0].icao} → ${chosen[1].icao} · ${legs[0]} + ${legs[1]} NM`;
+  /** Make a stored trip safe to compute: valid ids, consistent array lengths. */
+  function normalizeTrip(t) {
+    const ok = t && Array.isArray(t.stops) && t.stops.length >= 2 && t.stops.every((id) => stopSites().some((s) => s.id === id));
+    if (!ok) return freshTrip();
+    const n = t.stops.length, m = n - 1;
+    const pad = (arr, len, fill) => Array.from({ length: len }, (_, i) => (Array.isArray(arr) && arr[i] !== undefined ? arr[i] : fill));
+    return {
+      stops: [...t.stops],
+      actual: pad(t.actual, n, "").map((v) => String(v || "").replace(/[^0-9]/g, "")),
+      refuel: pad(t.refuel, n, false).map(Boolean),
+      scen: pad(t.scen, m, null),
+      alt: pad(t.alt, m, null),
+      alt2: pad(t.alt2, m, null),
+    };
+  }
+
+  /** The prototype's compute(), reading every figure from the dataset. */
+  function computeTrip(tIn) {
+    const t = normalizeTrip(tIn);
+    const n = t.stops.length, sec = [];
+    const refuelAt = (j) => j > 0 && j < n - 1 && !!t.refuel[j] && hasFuel(site(t.stops[j]));
+    for (let i = 0; i < n - 1; i++) {
+      const from = site(t.stops[i]), to = site(t.stops[i + 1]);
+      const prof = profilesFor(to);
+      const sc = prof.allowed.includes(t.scen[i]) ? t.scen[i] : prof.default;
+      const scen = rules.scenarios[sc];
+      const list = alternatesFor(to);
+      const chosen1 = list.find((s) => s.id === t.alt[i]);
+      const a1 = chosen1 || list[0] || null;
+      const rest = list.filter((s) => s !== a1);
+      const a2 = rest.find((s) => s.id === t.alt2[i]) || rest[0] || null;
+      const dist = nm(from, to), trip = leg(dist), cont = Math.round(CONT * trip);
+      const burn = TAXI + trip + cont + PER_ARRIVAL * APP;
+      const needAlts = scen.alt_fuel ? scen.alternates : 0;
+      const far = needAlts === 2 && a2 && a1 && nm(to, a2) > nm(to, a1) ? a2 : a1;
+      let own, altNm = null, altKg = null, error = null;
+      if (needAlts) {
+        if (!far || (needAlts === 2 && !a2)) { own = null; error = "NO VALID ALTERNATE"; }
+        else { altNm = nm(to, far); altKg = leg(altNm); own = burn + altKg + PER_ARRIVAL * APP + RESERVE; }
+      } else {
+        const extraApps = scen.approaches_default - PER_ARRIVAL; // A: second approach; VMC: none
+        const add = scen.trip_add_min ? Math.round((scen.trip_add_min / 60) * ac.cruise_burn_kg_per_hr) : 0;
+        own = burn + extraApps * APP + add + RESERVE;
       }
-    } else {
-      out.incomplete = "alternate";
+      sec.push({ i, from, to, profile: prof, sc, needAlts, list, a1, a2, far, auto: !chosen1, dist, trip, cont, burn, altNm, altKg, own, error });
     }
-  }
-
-  const startTaxi = Number.isFinite(p.startTaxi) ? p.startTaxi : AC.start_taxi_default_kg;
-  const approachCount = Number.isFinite(p.approaches) ? p.approaches : sc.approaches_default;
-  const discretionary = Number.isFinite(p.discretionary) ? p.discretionary : 0;
-
-  const lines = [];
-  const add = (key, label, kg, extra) => lines.push({ key, label, kg, l: kg === null ? null : kgToL(kg), ...extra });
-  add("startTaxi", "START & TAXI", startTaxi);
-  add("trip", "TRIP", trip);
-  if (sc.alt_fuel) add("alternate", altLabel, altKg, altSub ? { sub: altSub } : {});
-  add("contingency", "CONTINGENCY 10%", contingency);
-  add("finalReserve", "FINAL RESERVE", AC.final_reserve_ifr_kg);
-  // Where the 70 kg approaches go: one per airfield (destination + each alternate); scenario A
-  // plans two independent approaches at the destination.
-  let appSub;
-  if (approachCount !== sc.approaches_default) {
-    appSub = `ADJUSTED · DEFAULT ${sc.approaches_default}`;
-  } else if (p.scenario === "A") {
-    appSub = `${dest.icao} 2`;
-  } else {
-    const altNames = Array.from({ length: need }, (_, i) => (siteById((p.alts || [])[i]) || {}).icao || "ALTN");
-    appSub = [dest.icao, ...altNames].map((n) => `${n} 1`).join(" · ");
-  }
-  add("approaches", "IFR APPROACHES", approachCount * AC.per_ifr_approach_kg, { count: approachCount, sub: appSub });
-  if (p.scenario === "A") add("pins", "PinS / 2-APP (15 MIN)", PIN_S_KG);
-  add("discretionary", "DISCRETIONARY", discretionary);
-  lines.forEach((ln, i) => (ln.serial = i + 1));
-  out.lines = lines;
-
-  if (out.incomplete) return out;
-
-  out.required = lines.reduce((s, ln) => s + ln.kg, 0);
-  if (Number.isFinite(p.fob)) {
-    out.margin = p.fob - out.required;
-    out.verdict = out.margin >= 0 ? "ENOUGH" : "SHORT";
-    if (out.margin >= 0 && out.margin < AC.engine_failure_hold_kg_derived) {
-      out.flags.push(`margin below engine-failure ${AC.engine_failure_hold_min}-min hold (${AC.engine_failure_hold_kg_derived} kg).`);
+    // Minimum to lift, worked backwards. A refuel stop breaks the chain.
+    for (let i = sec.length - 1; i >= 0; i--) {
+      const s = sec[i];
+      const next = i < sec.length - 1 && !refuelAt(i + 1) ? sec[i + 1].gate : undefined;
+      const onward = next === undefined ? -1 : next === null ? null : s.burn + next;
+      if (s.own === null || onward === null) { s.gate = null; s.useOnward = false; continue; }
+      s.useOnward = onward > s.own;
+      s.gate = Math.max(s.own, onward);
     }
+    // Fuel chain, forwards: actual where entered, else planned (previous fuel − previous burn).
+    const fuel = [], planned = [], uplift = [], margin = [];
+    for (let i = 0; i < n; i++) {
+      planned[i] = i === 0 || fuel[i - 1] === null ? null : fuel[i - 1] - sec[i - 1].burn;
+      const a = parseInt(t.actual[i], 10);
+      const gate = i < n - 1 ? sec[i].gate : undefined;
+      if (!isNaN(a)) fuel[i] = a;
+      else if (i === 0) fuel[i] = gate === null ? null : gate;
+      else if (refuelAt(i) && gate !== null && planned[i] !== null) { fuel[i] = Math.max(planned[i], gate); uplift[i] = Math.max(0, gate - planned[i]); }
+      else fuel[i] = planned[i];
+      margin[i] = i < n - 1 && fuel[i] !== null && gate !== null ? fuel[i] - gate : null;
+    }
+    // Requirement table per sector, summing to that site's minimum to lift (OMB §5.2.3 style).
+    for (const s of sec) {
+      const pct = Math.round(CONT * 100);
+      const rows = [
+        { item: "Start & Taxi", req: "Start and taxi", kg: TAXI },
+        { item: "Trip", req: `${s.from.id}→${s.to.id} · ${Math.round(s.dist)} nm`, kg: s.trip },
+        { item: "Contingency", req: `${pct}% of trip`, kg: s.cont },
+      ];
+      const scen = rules.scenarios[s.sc];
+      if (s.gate === null) rows.push({ item: "—", req: s.error || "chain incomplete", kg: null });
+      else if (s.useOnward) {
+        rows.push({ item: "IFR Approach", req: `${PER_ARRIVAL} × ${APP} kg at ${s.to.id}`, kg: PER_ARRIVAL * APP });
+        rows.push({ item: "Onward", req: `Min to lift ${s.to.id}`, kg: sec[s.i + 1].gate });
+      } else if (!s.needAlts) {
+        const nApp = scen.approaches_default;
+        rows.push({ item: nApp > 1 ? "IFR Approaches" : "IFR Approach", req: `${nApp} × ${APP} kg at ${s.to.id}`, kg: nApp * APP });
+        if (scen.trip_add_min) rows.push({ item: "Additional", req: `${scen.trip_add_min} min added to trip`, kg: Math.round((scen.trip_add_min / 60) * ac.cruise_burn_kg_per_hr) });
+        rows.push({ item: "Final Reserve", req: "30 min holding", kg: RESERVE });
+      } else {
+        rows.push({ item: "IFR Approach", req: `${PER_ARRIVAL} × ${APP} kg at ${s.to.id}`, kg: PER_ARRIVAL * APP });
+        rows.push({ item: "Alternate", req: `${s.to.id}→${s.far.id} · ${Math.round(s.altNm)} nm`, kg: s.altKg });
+        rows.push({ item: "Altn approach", req: `${PER_ARRIVAL} × ${APP} kg at ${s.far.id}`, kg: PER_ARRIVAL * APP });
+        rows.push({ item: "Final Reserve", req: "30 min holding", kg: RESERVE });
+      }
+      s.rows = rows;
+    }
+    const entered = !isNaN(parseInt(t.actual[0], 10));
+    return {
+      trip: t, sec, fuel, planned, uplift, margin,
+      refuelAt: Array.from({ length: n }, (_, j) => refuelAt(j)),
+      headline: { site: t.stops[0], gate: sec[0].gate, entered, margin: entered ? margin[0] : null },
+      landing: fuel[n - 1],
+    };
   }
-  if (out.required > AC.usable_fuel_kg) {
-    out.flags.push(`REQUIRED exceeds usable fuel (${AC.usable_fuel_kg} kg).`);
-  }
-  return out;
+
+  return { stopSites, planStatus, hasFuel, profilesFor, alternatesFor, normalizeTrip, computeTrip, isPins, nonGnss };
 }
+
+export const planner = makePlanner(DATA);
 
 // ───────────────────────── wireframe map helpers ─────────────────────────
 // Geometry (src/map-geometry.json) is generated by tools/gen_map.py in exactly
@@ -175,34 +230,6 @@ export const MAP = GEO;
 export function project(lat, lon) {
   const m = GEO.meta;
   return { x: (lon - m.lonMin) * m.k * m.scale, y: (m.latMax - lat) * m.scale };
-}
-
-const ROLE_KEYS = ["origin", "dest", "alt1", "alt2"];
-
-/**
- * Tap on a map marker → next selection state (mirrors the dropdown rules).
- * sel = {origin, dest, alt1, alt2}; needAlts = alternates the scenario wants (0–2).
- * Tapping a field already holding a role clears that role. Otherwise it takes the
- * next unset role in the order origin → destination → alternate(s). Destination and
- * alternates need ≥1 approach (so Redhill stays origin-only). Refuel points and
- * hospitals are display-only: they just return a caption.
- */
-export function tapSite(sel, id, needAlts) {
-  const site = siteById(id);
-  if (!site) return { sel, note: "" };
-  if (site.type !== "airfield_ifr") {
-    return { sel, note: `${site.name} — ${site.type === "hospital" ? "hospital" : "refuel point"} (display only)` };
-  }
-  for (const k of ROLE_KEYS) if (sel[k] === id) return { sel: { ...sel, [k]: "" }, note: "" };
-  const hasApp = (site.approaches || []).length > 0;
-  const n = { ...sel };
-  const noApp = { sel, note: `${site.icao} ${site.name} has no approaches — origin only` };
-  if (!n.origin) n.origin = id;
-  else if (!n.dest) { if (!hasApp) return noApp; n.dest = id; }
-  else if (needAlts >= 1 && !n.alt1) { if (!hasApp) return noApp; n.alt1 = id; }
-  else if (needAlts === 2 && !n.alt2) { if (!hasApp) return noApp; n.alt2 = id; }
-  else return { sel, note: "All roles set — tap a selected field to clear it" };
-  return { sel: n, note: "" };
 }
 
 /**
