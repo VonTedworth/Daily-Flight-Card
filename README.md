@@ -125,6 +125,8 @@ UPLIFT L  = UPLIFT KG ÷ DENSITY
 
 **Example:** required 650, on board 300, density 0.79 → 350 kg → **443 L**. Inline row refuel is the same formula with REQUIRED = planned and CURRENT = that row's landed fuel; result never goes negative.
 
+**README link.** The bottom of the UPLIFT tab (the shortest tab) carries **README — HOW THE APP WORKS ↗**, which opens this guide on GitHub in a new tab. It needs signal; the app itself does not.
+
 ---
 
 ## 3A. IFR FUEL tab — multi-sector planning
@@ -135,8 +137,24 @@ UPLIFT L  = UPLIFT KG ÷ DENSITY
 
 **Fully offline.** Every figure and rule comes from `src/fuel-planner-dataset.json`, bundled at build; nothing is fetched. The current trip is saved on the phone under its own key (`ifr-fuel-trip`) — it never touches the flight card. **RESET TRIP** (asks first) returns to the default trip. Units: fuel **kg** (L = kg ÷ 0.79), distance **nm**. The maths is a port of the approved prototype (`prototype-fuel-multisector.html`); the build brief is `multisector-build-brief.md`.
 
+### Planning a trip — step by step
+1. **Build the route.** Set the first stop (where you lift from) and each following stop with the dropdowns; **+ ADD SECTOR** adds one, **✕** removes one. The map draws the route as you go.
+2. **Check each sector's profile.** The collapsed line under each card shows destination · distance · profile · alternate(s) · sector burn. Tap it to open the sector: pick the profile that matches the forecast (the hint inside each letter says what it means — e.g. *1 ALTN +800M*), and check the alternate. The nearest valid alternate is chosen for you; change it if needed. Profiles the OMA does not allow for that destination are greyed out.
+3. **Read REQUIRED TO LIFT.** The headline is the fuel needed at the first stop for the whole trip, including every later minimum that has to be carried because the stops in between have no fuel.
+4. **Enter the fuel on board at the first stop.** The headline turns **ENOUGH +n** or **SHORT −n**, and the planned fuel at every later stop follows (shown dim in each ACTUAL box).
+5. **During the trip, check the gauge against MIN TO LIFT before each departure.** Type the actual figure into that stop's box: MARGIN updates, and every later planned figure follows from what you entered. A negative margin turns the card amber — *IFR departure not available: refuel, or hold for weather.*
+6. **Refuel stops.** At a mid-trip airfield with fuel, **REFUEL HERE** breaks the chain: the stops before only have to get you there with their own reserves, and the card tells you what you will arrive with and the uplift needed.
+7. **Keep a record.** **EXPORT PLAN (PDF)** saves the plan exactly as shown (below).
+
 ### Stops
 Any **IFR airfield** or **PinS site** can be a stop: EGKR Redhill, EGKK, EGKB, EGKA, EGMD, EGMC, EGHI, EGLL, EGLC, EGSS, and the PinS sites EGKD William Harvey (WHH), EGKC King's College (KCH), EGRS Royal Sussex (RSCH), EGGB East Brighton Park (EBP). Other hospitals and the VFR refuel points (Manston, Rochester) are map markers only. A site whose only approach is not yet usable carries a tag — **PLANNED** (Redhill's PinS) or **CONFIRM** (the hospital PinS procedures) — and stays selectable. **+ ADD SECTOR** adds a stop; **✕** removes one (minimum two).
+
+### PLANNED and CONFIRM tags
+The amber tag on a stop card comes from the `status` of that site's approaches in the dataset, and is shown when a site's **only** procedures are not yet usable:
+- **PLANNED** — the procedure does not exist yet. Redhill's only listed procedure is a PinS marked *planned*.
+- **CONFIRM** — the procedure is listed but still to be confirmed as published and usable: the hospital PinS sites (William Harvey, King's College, Royal Sussex, East Brighton Park). This is open item 3.
+
+The tag is a warning that the plan relies on a procedure you must confirm before flying it. It changes no fuel figure and the site stays selectable as a stop. Its one effect on planning: a field whose only approach is tagged cannot be offered as an **alternate** — which is why Redhill never appears in an alternate list. When a procedure is confirmed, removing its `status` in the dataset clears the tag.
 
 ### Per sector (stop *i* → stop *i+1*)
 ```
@@ -176,7 +194,17 @@ Fuel then runs forwards: at each stop it is the **ACTUAL** figure if you entered
 **REFUEL HERE** appears on a mid-trip stop whose site has fuel (every airfield; no PinS site yet). It breaks the chain at that stop, relabels the input **AFTER REFUEL KG**, and shows *ARRIVE WITH n KG · UPLIFT AT LEAST n KG* (or that no uplift is needed). William Harvey has `fuel: false` (`fuel_planned: true`); when fuel arrives there it is a one-line dataset change.
 
 ### Screen
-Map (route through every stop solid, each sector's alternate(s) dashed; tap a site to see what it is) → **REQUIRED TO LIFT** headline with ENOUGH/SHORT against the fuel entered at the first stop → one card per stop with three numbers (MIN TO LIFT · ACTUAL KG · MARGIN) → between cards a collapsed sector line (destination · distance · profile · alternate(s) · sector burn). Tap the line for the profile strip, its description, the approaches at the destination and alternate(s), the alternate picker(s), and the OMB §5.2.3-style table (MIN TO LIFT · REQUIREMENT · L · KG) summing to that site's minimum — ending **Onward — min to lift next site** when the onward chain governs.
+Map (route through every stop solid, each sector's alternate(s) dashed; tap a site to see what it is) → **REQUIRED TO LIFT** headline with ENOUGH/SHORT against the fuel entered at the first stop → one card per stop with three numbers (MIN TO LIFT · ACTUAL KG · MARGIN) → between cards a collapsed sector line (destination · distance · profile · alternate(s) · sector burn) → **+ ADD SECTOR**, **EXPORT PLAN (PDF)**, **RESET TRIP**. Tap the line for the profile strip, its description, the approaches at the destination and alternate(s), the alternate picker(s), and the OMB §5.2.3-style table (MIN TO LIFT · REQUIREMENT · L · KG) summing to that site's minimum — ending **Onward — min to lift next site** when the onward chain governs.
+
+### Export plan (PDF)
+**EXPORT PLAN (PDF)** (between + ADD SECTOR and RESET TRIP) builds a one- or two-page A4 PDF of the plan exactly as on screen and opens the share sheet (save to Files, Mail, etc.). It works offline. File name: `IFR FUEL <route> <dd.mm.yyyy> <hhmm>.pdf`, e.g. `IFR FUEL EGKR-EGKD-EGKC-EGKR 15.11.2026 1803.pdf`. Contents:
+- header with date/time, the disclaimer, the **app version** and **every figure the sums used** (130 kt, 280 kg/hr, start & taxi 30, approach 70, final reserve 150, contingency 10%, 15 min = 70, density 0.79) — so a plan can be re-checked by hand later;
+- the route, REQUIRED TO LIFT and the fuel entered at the first stop with ENOUGH/SHORT;
+- every stop: tag, MIN TO LIFT, fuel (actual / planned / after refuel / planned on landing), margin, refuel uplift, and any BELOW MINIMUM warning;
+- every sector: distance, profile and its description, alternate(s) (nearest / chosen), sector burn, the approaches at the destination and alternate(s), and the full requirement table (MIN TO LIFT · REQUIREMENT · L · KG) summing to that site's minimum, noting when the onward chain governs;
+- the open items still awaiting confirmation.
+
+Exporting changes nothing in the trip or the flight card. Use it for record keeping and to error-check the planner against your own figures.
 
 **Reference check (brief §6).** Default trip EGKR → EGKD → EGKC → EGKR, profile C, nearest alternates (EGMD, EGLC, EGKK): burns 194 / 200 / 136 kg, **MIN TO LIFT 759 / 565 / 365 kg**; with 820 kg at the start, planned landing fuel 290 kg. Add EGKR → EGKK: VMC 790 / 596 / 396 / 260, A 930 / 736 / 536 / 400, D (EGKB + EGKA) 901 / 707 / 507 / 371.
 
@@ -217,7 +245,7 @@ The completed card is archived under PREVIOUS CARDS with its original SRP.
 
 ## 6. Storage, privacy, display
 
-- Everything lives in `localStorage` on that phone: current card, previous 4 cards, last reg, theme. Each device independent; nothing transmitted. GPS used only when a HEMS box is ticked.
+- Everything lives in `localStorage` on that phone: current card, previous 4 cards, last reg, theme, and the IFR FUEL trip (its own key, `ifr-fuel-trip`, separate from the card). Each device independent; nothing transmitted. GPS used only when a HEMS box is ticked.
 - localStorage is not indestructible — clearing Safari website data wipes cards. The emailed PDF is the durable record.
 - **Launches with no signal.** A service worker keeps a copy of the app on the phone. Open it once with signal (and add it to the Home Screen); after that it launches with no connection at all. On weak signal it tries the network for about 3 seconds, then opens the saved copy rather than hanging. With good signal it loads the latest version and refreshes the saved copy.
 - **Updates never interrupt you.** A new version downloads quietly in the background; the page you have open is never reloaded or swapped mid-session. The next time you open the app it is the new version (check the `vN · date` stamp).

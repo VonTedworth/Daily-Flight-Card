@@ -80,7 +80,9 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v11";
+const APP_VERSION = "v12";
+// The user guide (rendered on GitHub). Opening it needs signal; the app itself does not.
+const README_URL = "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md";
 const BUILD_DATE = typeof window !== "undefined" && window.__BUILD_DATE__ ? window.__BUILD_DATE__ : "";
 const NUM_ROWS = 7; // one SRP page has seven sectors
 // >4600 kg is NOT an exceedance — the AW169 all-up mass is 4800 kg.
@@ -578,6 +580,28 @@ function FuelCalc({
         USE THE ACTUAL DENSITY FROM THE FUEL RECEIPT OR BOWSER WHEN AVAILABLE — 0.79 IS NOMINAL AND VARIES WITH
         TEMPERATURE (TYPICALLY 0.775–0.81 KG/L).
       </p>
+      <a
+        data-readme
+        href={README_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          display: "block",
+          marginTop: 16,
+          paddingTop: 12,
+          borderTop: `1px solid ${C.edge}`,
+          color: C.cyan,
+          fontFamily: mono,
+          fontSize: 10.5,
+          letterSpacing: "0.1em",
+          textDecoration: "none",
+        }}
+      >
+        README — HOW THE APP WORKS ↗
+        <span style={{ display: "block", color: C.grey, fontSize: 9.5, letterSpacing: "0.04em", marginTop: 3 }}>
+          Opens the guide on GitHub (needs signal).
+        </span>
+      </a>
     </>
   );
 }
@@ -1837,6 +1861,202 @@ function loadTrip() {
   }
 }
 
+// ── IFR FUEL plan → PDF (record keeping and error checking) ──
+// Built from the same computeTrip() result the screen shows, so it is the plan exactly as
+// planned. jsPDF's built-in Courier is WinAnsi-only, so arrows etc. are swapped for ASCII.
+const pdfText = (t) => String(t).replace(/→/g, ">").replace(/≥/g, ">=").replace(/−/g, "-");
+const two = (n) => String(n).padStart(2, "0");
+
+function makeTripPdf(r, meta) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const W = 210, M = 14, BOTTOM = 280;
+  let y = 16;
+  const ensure = (h) => {
+    if (y + h > BOTTOM) {
+      doc.addPage();
+      y = 16;
+    }
+  };
+  const font = (style, size, rgb) => {
+    doc.setFont("courier", style);
+    doc.setFontSize(size);
+    doc.setTextColor(...rgb);
+  };
+  const DARK = [20, 20, 20], GREY = [110, 110, 110], AMBER = [200, 120, 0], GREEN = [0, 130, 60];
+  const para = (txt, size, rgb, style = "normal", lh = 3.8) => {
+    font(style, size, rgb);
+    const lines = doc.splitTextToSize(pdfText(txt), W - 2 * M);
+    ensure(lines.length * lh);
+    doc.text(lines, M, y);
+    y += lines.length * lh;
+  };
+  const rule = () => {
+    doc.setDrawColor(150, 150, 150);
+    doc.setLineWidth(0.3);
+    doc.line(M, y, W - M, y);
+  };
+  const stops = r.trip.stops;
+  const site = (id) => FUEL_DATA.sites.find((s) => s.id === id);
+  const ac = FUEL_DATA.aircraft, rules = FUEL_DATA.oma_rules;
+
+  // header
+  font("bold", 13, DARK);
+  doc.text("IFR FUEL PLAN — AW169 (OMB34)", M, y);
+  font("normal", 9.5, DARK);
+  doc.text(meta.stamp, W - M, y, { align: "right" });
+  y += 4;
+  doc.setLineWidth(0.4);
+  doc.line(M, y, W - M, y);
+  y += 5;
+  para("Planning cross-check only — not a certified flight-planning tool. Verify against the OFP and current plates.", 8.5, GREY);
+  para(
+    `App ${meta.version}${meta.buildDate ? " (" + meta.buildDate + ")" : ""} · figures used: ${ac.plan_speed_kt} kt · ${ac.cruise_burn_kg_per_hr} kg/hr · ` +
+      `start & taxi ${ac.start_taxi_default_kg} · approach ${ac.per_ifr_approach_kg} · final reserve ${ac.final_reserve_ifr_kg} · ` +
+      `contingency ${rules.contingency_pct_ifr}% · 15 min = ${Math.round((rules.scenario_A_trip_add_min / 60) * ac.cruise_burn_kg_per_hr)} · density ${ac.fuel_density_kg_per_l}`,
+    8,
+    GREY
+  );
+  y += 2;
+
+  // route + headline
+  font("bold", 11, DARK);
+  ensure(6);
+  doc.text("ROUTE  " + stops.join(" > "), M, y);
+  y += 6;
+  const h = r.headline;
+  const verdict = !h.entered || h.margin === null ? `FUEL AT ${h.site}: not entered` : h.margin < 0 ? `SHORT ${h.margin} KG` : `ENOUGH +${h.margin} KG`;
+  font("bold", 10.5, h.entered && h.margin !== null && h.margin < 0 ? AMBER : DARK);
+  doc.text(`REQUIRED TO LIFT ${h.site}: ${h.gate === null ? "-" : h.gate + " KG"}`, M, y);
+  doc.text(h.entered ? `FUEL AT ${h.site}: ${r.fuel[0]} KG   ${verdict}` : verdict, W - M, y, { align: "right" });
+  y += 5;
+  rule();
+  y += 5;
+
+  // stops table
+  font("bold", 9, DARK);
+  doc.text("STOPS", M, y);
+  y += 4.5;
+  const cx = [M, M + 8, M + 92, M + 120, M + 150];
+  font("normal", 7.5, GREY);
+  ["#", "SITE", "MIN TO LIFT", "FUEL KG", "MARGIN"].forEach((t, i) => doc.text(t, cx[i], y));
+  y += 4;
+  stops.forEach((id, i) => {
+    const st = site(id);
+    const last = i === stops.length - 1;
+    const status = planner.planStatus(st);
+    const entered = !isNaN(parseInt(r.trip.actual[i], 10));
+    const fuelTxt = r.fuel[i] === null ? "-" : `${r.fuel[i]} ${last ? "planned on landing" : r.refuelAt[i] ? (entered ? "after refuel" : "after refuel (min)") : entered ? "actual" : i === 0 ? "(lift at min)" : "planned"}`;
+    const margin = last || (i === 0 && !r.headline.entered) ? null : r.margin[i];
+    ensure(9);
+    font("bold", 9, DARK);
+    doc.text(String(i + 1), cx[0], y);
+    doc.text(pdfText(`${st.icao} ${st.name}${status ? " [" + status.toUpperCase() + "]" : ""}`).slice(0, 44), cx[1], y);
+    doc.text(last ? "-" : String(r.sec[i].gate ?? "-"), cx[2], y);
+    font("normal", 9, DARK);
+    doc.text(fuelTxt, cx[3], y);
+    font("bold", 9, margin === null ? GREY : margin < 0 ? AMBER : GREEN);
+    doc.text(margin === null ? "-" : `${margin > 0 ? "+" : ""}${margin}`, cx[4] + 20, y, { align: "right" });
+    y += 4.2;
+    if (r.refuelAt[i] && r.planned[i] !== null) {
+      font("normal", 8, GREEN);
+      doc.text(`   REFUEL HERE — arrive with ${r.planned[i]} kg${r.uplift[i] === undefined ? "" : r.uplift[i] > 0 ? ` · uplift at least ${r.uplift[i]} kg` : " · no uplift needed"}`, cx[1], y);
+      y += 3.8;
+    }
+    if (!last && margin !== null && margin < 0) {
+      font("bold", 8, AMBER);
+      doc.text("   BELOW MINIMUM — IFR DEPARTURE NOT AVAILABLE. REFUEL BEFORE CONTINUING, OR HOLD FOR WEATHER.", cx[1], y);
+      y += 3.8;
+    }
+  });
+  y += 2;
+  rule();
+  y += 5;
+
+  // sectors
+  r.sec.forEach((s) => {
+    ensure(30);
+    font("bold", 9.5, DARK);
+    const alt = s.needAlts === 0 ? "NO ALTERNATE" : s.error ? s.error : `ALTN ${s.a1.id}${s.needAlts === 2 ? " + " + s.a2.id : ""} (${s.auto ? "nearest" : "chosen"})`;
+    doc.text(pdfText(`SECTOR ${s.i + 1}  ${s.from.id} > ${s.to.id} · ${Math.round(s.dist)} nm · PROFILE ${s.sc} · ${alt}`), M, y);
+    font("bold", 9.5, DARK);
+    doc.text(`BURN ${s.burn} KG`, W - M, y, { align: "right" });
+    y += 4.4;
+    para(SCENARIO_TEXT[s.sc] + (s.profile.key === "pins" ? " " + PINS_NOTE : ""), 7.8, GREY);
+    const appr = [s.to, ...(s.needAlts >= 1 && s.a1 ? [s.a1] : []), ...(s.needAlts === 2 && s.a2 ? [s.a2] : [])]
+      .map((x) => `${x.id}: ${approachSummary(x.id).join(" · ") || "none listed"}`)
+      .join("   ");
+    para("Approaches  " + appr, 7.8, GREY);
+    y += 1;
+    const tx = [M + 2, M + 34, M + 150, M + 170];
+    font("normal", 7.2, GREY);
+    ensure(5);
+    doc.text(`MIN TO LIFT ${s.from.id}`, tx[0], y);
+    doc.text("REQUIREMENT", tx[1], y);
+    doc.text("L", tx[2], y, { align: "right" });
+    doc.text("KG", tx[3], y, { align: "right" });
+    y += 3.8;
+    s.rows.forEach((row) => {
+      ensure(4);
+      font("normal", 8.5, DARK);
+      doc.text(pdfText(row.item), tx[0], y);
+      font("normal", 8, GREY);
+      doc.text(pdfText(row.req), tx[1], y);
+      font("normal", 8.5, DARK);
+      doc.text(row.kg === null ? "-" : String(kgToL(row.kg)), tx[2], y, { align: "right" });
+      font("bold", 8.5, DARK);
+      doc.text(row.kg === null ? "-" : String(row.kg), tx[3], y, { align: "right" });
+      y += 3.9;
+    });
+    ensure(5);
+    font("bold", 9, DARK);
+    doc.text("MIN TO LIFT", tx[0], y);
+    doc.text(s.gate === null ? "-" : String(kgToL(s.gate)), tx[2], y, { align: "right" });
+    doc.text(s.gate === null ? "-" : String(s.gate), tx[3], y, { align: "right" });
+    y += 3.6;
+    if (s.useOnward) para("Onward chain governs: this site's minimum = this sector + the minimum to lift at the next site.", 7.6, GREY);
+    y += 3;
+  });
+  rule();
+  y += 5;
+  para("OPEN ITEMS (awaiting confirmation; implemented as stated)", 8.5, DARK, "bold");
+  [
+    "1. Contingency 10% per sector, planned as used, nothing carried forward.",
+    "2. PinS in clear VMC: never planned without an alternate (OMA 8.3.2.7.7).",
+    "3. PinS approach status: procedures marked CONFIRM / PLANNED are not yet confirmed as published and usable.",
+    "4. Site coordinates: East Brighton Park (EGGB) user-supplied; all others to be verified.",
+    "5. The OMA PinS text is a provisional starting position and may change.",
+  ].forEach((t) => para(t, 7.8, GREY));
+
+  const pages = doc.getNumberOfPages();
+  for (let p = 1; p <= pages; p++) {
+    doc.setPage(p);
+    font("normal", 8, GREY);
+    doc.text(`GENERATED BY DAILY FLIGHT CARD APP ${meta.version} · PAGE ${p} OF ${pages}`, W - M, 290, { align: "right" });
+  }
+  return doc;
+}
+
+async function shareTripPdf(r) {
+  const now = new Date();
+  const date = `${two(now.getDate())}.${two(now.getMonth() + 1)}.${now.getFullYear()}`;
+  const hhmm = `${two(now.getHours())}${two(now.getMinutes())}`;
+  const doc = makeTripPdf(r, { version: APP_VERSION, buildDate: BUILD_DATE, stamp: `${date} ${hhmm}` });
+  const subject = `IFR FUEL ${r.trip.stops.join("-")} ${date} ${hhmm}`;
+  const name = `${subject}.pdf`;
+  const blob = doc.output("blob");
+  const file = new File([blob], name, { type: "application/pdf" });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    await navigator.share({ files: [file], title: subject, text: subject });
+  } else {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+}
+
 const siteName = (st) => `${st.icao || st.short} ${st.name.toUpperCase()}`;
 function siteCaption(st) {
   const kind = { airfield_ifr: "IFR airfield", pins_site: "PinS site", refuel_vfr: "VFR refuel point", hospital: "hospital (map only)" }[st.type] || st.type;
@@ -1958,6 +2178,7 @@ function IfrFuel() {
   const [open, setOpen] = useState([]);
   const [mapNote, setMapNote] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Every change goes through here: normalise, persist under the planner's own key.
   const update = (fn) =>
@@ -2018,6 +2239,13 @@ function IfrFuel() {
     setOpen([]);
     setConfirmReset(false);
     setMapNote("");
+  };
+  const exportPdf = async () => {
+    setExporting(true);
+    try {
+      await shareTripPdf(r);
+    } catch {} // share sheet cancelled, or unavailable: nothing to do
+    setExporting(false);
   };
   const toggleOpen = (i) => setOpen((o) => Object.assign([...o], { [i]: !o[i] }));
   const tapMap = (id) => {
@@ -2316,6 +2544,14 @@ function IfrFuel() {
         style={{ width: "100%", marginTop: 10, border: `1px dashed ${C.cyan}`, borderRadius: 8, background: "transparent", fontFamily: mono, fontSize: 10, letterSpacing: "0.14em", color: C.cyan, padding: "10px 0", cursor: "pointer" }}
       >
         + ADD SECTOR
+      </button>
+      <button
+        data-export-pdf
+        onClick={exportPdf}
+        disabled={exporting}
+        style={{ ...btnStyle(C.green), marginTop: 8, padding: "10px 0", fontSize: 10, opacity: exporting ? 0.5 : 1 }}
+      >
+        {exporting ? "PREPARING PDF…" : "EXPORT PLAN (PDF)"}
       </button>
       {!confirmReset ? (
         <button data-reset onClick={() => setConfirmReset(true)} style={{ ...btnStyle(C.grey), marginTop: 8, padding: "8px 0", fontSize: 10 }}>
