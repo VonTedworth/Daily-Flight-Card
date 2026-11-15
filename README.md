@@ -135,10 +135,10 @@ UPLIFT L  = UPLIFT KG ÷ DENSITY
 
 **Why a trip, not a leg.** PinS hospital sites have no fuel, so everything the whole chain needs must be on board at the first lift. The tab gives (1) **REQUIRED TO LIFT** from the first site, and (2) a **MIN TO LIFT** at every later site, to check against the gauge before departing it. If the fuel at a site is below its minimum, an IFR departure from there is not available: refuel, or hold for weather.
 
-**Fully offline.** Every figure and rule comes from `src/fuel-planner-dataset.json`, bundled at build; nothing is fetched. The current trip is saved on the phone under its own key (`ifr-fuel-trip`) — it never touches the flight card. **RESET TRIP** (asks first) returns to the default trip. Units: fuel **kg** (L = kg ÷ 0.79), distance **nm**. The maths is a port of the approved prototype (`prototype-fuel-multisector.html`); the build brief is `multisector-build-brief.md`.
+**Fully offline.** Every figure and rule comes from `src/fuel-planner-dataset.json`, bundled at build; nothing is fetched. The current trip is saved on the phone under its own key (`ifr-fuel-trip`) — it never touches the flight card. The tab opens with a **blank trip** (two empty stops) — no route is pre-filled — and **RESET TRIP** (asks first) clears back to that blank trip. Units: fuel **kg** (L = kg ÷ 0.79), distance **nm**. The maths is a port of the approved prototype (`prototype-fuel-multisector.html`); the build brief is `multisector-build-brief.md`.
 
 ### Planning a trip — step by step
-1. **Build the route.** Set the first stop (where you lift from) and each following stop with the dropdowns; **+ ADD SECTOR** adds one, **✕** removes one. The map draws the route as you go.
+1. **Build the route.** Start from the blank trip: set the first stop (where you lift from) and each following stop with the dropdowns; **+ ADD SECTOR** adds an empty stop, **✕** removes one. The map draws the route as you go. Until every stop is chosen, the sector lines read *SELECT THE NEXT STOP*, the headline reads **SELECT EVERY STOP TO PLAN**, no minimums are shown and **EXPORT PLAN (PDF)** is greyed out.
 2. **Check each sector's profile.** The collapsed line under each card shows destination · distance · profile · alternate(s) · sector burn. Tap it to open the sector: pick the profile that matches the forecast (the hint inside each letter says what it means — e.g. *1 ALTN +800M*) — or **VFR** if that leg is flown visually — and check the alternate. The nearest valid alternate is chosen for you; change it if needed. Profiles the OMA does not allow for that destination are greyed out.
 3. **Read REQUIRED TO LIFT.** The headline is the fuel needed at the first stop for the whole trip, including every later minimum that has to be carried because the stops in between have no fuel.
 4. **Enter the fuel on board at the first stop.** The headline turns **ENOUGH +n** or **SHORT −n**, and the planned fuel at every later stop follows (shown dim in each ACTUAL box).
@@ -150,12 +150,12 @@ UPLIFT L  = UPLIFT KG ÷ DENSITY
 Any **IFR airfield** or **PinS site** can be a stop: EGKR Redhill, EGKK, EGKB, EGKA, EGMD, EGMC, EGHI, EGLL, EGLC, EGSS, and the PinS sites EGKD William Harvey (WHH), EGKC King's College (KCH), EGRS Royal Sussex (RSCH), EGGB East Brighton Park (EBP). Other hospitals and the VFR refuel points (Manston, Rochester) are map markers only. **+ ADD SECTOR** adds a stop; **✕** removes one (minimum two).
 
 ### Approach status (planned / confirm) — not shown
-Every PinS procedure in the dataset is still in the planning phase: Redhill's PinS is marked `planned` (it does not exist yet) and the hospital PinS procedures (William Harvey, King's College, Royal Sussex, East Brighton Park) are marked `confirm` (not yet confirmed as published and usable — open item 3). Since everything except the airfields is unofficial for now, the app **no longer shows** these as tags, in the approaches lines, on the map or in the PDF. The `status` stays in the dataset for one reason: a field whose only approach is not usable cannot be offered as an **alternate**, which is why Redhill never appears in an alternate list. To be revisited when the plates and procedure minima are available — clearing a procedure's `status` in the dataset makes it a normal published approach.
+Every PinS procedure in the dataset is still in the planning phase: Redhill's PinS is marked `planned` (it does not exist yet) and the hospital PinS procedures (William Harvey, King's College, Royal Sussex, East Brighton Park) are marked `confirm` (not yet confirmed as published and usable — open item 2). Since everything except the airfields is unofficial for now, the app **no longer shows** these as tags, in the approaches lines, on the map or in the PDF. The `status` stays in the dataset for one reason: a field whose only approach is not usable cannot be offered as an **alternate**, which is why Redhill never appears in an alternate list. To be revisited when the plates and procedure minima are available — clearing a procedure's `status` in the dataset makes it a normal published approach.
 
 ### Per sector (stop *i* → stop *i+1*)
 ```
 trip  = round(dist_nm ÷ 130 × 280)       great-circle distance, unrounded nm
-cont  = round(10% × trip)                planned as used on every sector
+cont  = round(10% × trip)                burnt on that sector; none of it is carried forward
 burn  = 30 start & taxi + trip + cont + 70 (one approach at the destination; none on a VFR leg)
 
 own requirement, by profile:
@@ -202,18 +202,19 @@ Map (route through every stop solid, each sector's alternate(s) dashed; tap a si
 - the route, REQUIRED TO LIFT and the fuel entered at the first stop with ENOUGH/SHORT;
 - every stop: MIN TO LIFT, fuel (actual / planned / after refuel / planned on landing), margin, refuel uplift, and any BELOW MINIMUM warning;
 - every sector: distance, profile and its description, alternate(s) (nearest / chosen), sector burn, the approaches at the destination and alternate(s), and the full requirement table (MIN TO LIFT · REQUIREMENT · L · KG) summing to that site's minimum, noting when the onward chain governs;
-- the open items still awaiting confirmation.
+- the open items still awaiting confirmation, and the confirmed contingency rule.
 
 Exporting changes nothing in the trip or the flight card. Use it for record keeping and to error-check the planner against your own figures.
 
-**Reference check (brief §6).** Default trip EGKR → EGKD → EGKC → EGKR, profile C, nearest alternates (EGMD, EGLC, EGKK): burns 194 / 200 / 136 kg, **MIN TO LIFT 759 / 565 / 365 kg**; with 820 kg at the start, planned landing fuel 290 kg. Add EGKR → EGKK: VMC 790 / 596 / 396 / 260, A 930 / 736 / 536 / 400, D (EGKB + EGKA) 901 / 707 / 507 / 371.
+**Contingency (confirmed by Ed, Nov 2026).** Each sector's 10% contingency is treated as **burnt on that sector** when planning: the planned fuel at the next stop is what you lifted minus start & taxi, trip, contingency and the approach — none of the contingency is assumed to be left for the next leg. Example: 820 kg at Redhill → William Harvey (trip 85, contingency 9) plans 820 − 30 − 85 − 9 − 70 = **626 kg** on arrival. The contingency row in each sector's table reads *10% of trip, burnt this leg*.
+
+**Reference check (brief §6).** Example trip (used by the tests; the app no longer pre-fills it) EGKR → EGKD → EGKC → EGKR, profile C, nearest alternates (EGMD, EGLC, EGKK): burns 194 / 200 / 136 kg, **MIN TO LIFT 759 / 565 / 365 kg**; with 820 kg at the start, planned landing fuel 290 kg. Add EGKR → EGKK: VMC 790 / 596 / 396 / 260, A 930 / 736 / 536 / 400, D (EGKB + EGKA) 901 / 707 / 507 / 371.
 
 ### Open items (implemented as stated, kept as data, awaiting confirmation)
-1. **Contingency** 10% per sector, planned as used, nothing carried forward.
-2. **PinS in clear VMC** — whether a PinS flight can ever be planned without an alternate. Not offered, following 8.3.2.7.7.
-3. **PinS approach status** — which PinS procedures are published and usable; the dataset marks them `confirm` / `planned`.
-4. **Site coordinates** — East Brighton Park (EGGB) is the user-supplied 50.8174, −0.1018; all other site coordinates still to be verified.
-5. The OMA PinS text is a provisional starting position and may change.
+1. **PinS in clear VMC** — whether a PinS flight can ever be planned without an alternate. Not offered, following 8.3.2.7.7.
+2. **PinS approach status** — which PinS procedures are published and usable; the dataset marks them `confirm` / `planned`.
+3. **Site coordinates** — East Brighton Park (EGGB) is the user-supplied 50.8174, −0.1018; all other site coordinates still to be verified.
+4. The OMA PinS text is a provisional starting position and may change.
 
 ### Map
 A wireframe map of south-east England (Kent, Surrey, Sussex, Greater London, Hampshire, Isle of Wight, and Essex up to Stansted and Chelmsford), bundled inline — no tiles, no runtime fetch. Airfields are cyan circles, PinS sites cyan Ⓗ, other hospitals grey Ⓗ, refuel points amber diamonds; the first stop is green, other stops cyan, alternates amber. Every site is labelled — airfields by ICAO, hospitals and PinS sites by short name (RSCH, WHH, KCH, EBP, SGH, MAID, PEM, STM, QA, QEQM, FPH, EDGH, SOTON, HAST = Conquest Hastings, MMH = Medway Maritime, DVH = Darent Valley, BROOM = Broomfield Chelmsford) — with labels nudged clear of each other and of the markers.

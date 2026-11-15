@@ -6,7 +6,7 @@ const check = (n, ok) => res.push([n, !!ok]);
 const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
 const P = f.planner;
 const S = (id) => f.siteById(id);
-const trip = (patch = {}) => Object.assign(f.freshTrip(), patch);
+const trip = (patch = {}) => Object.assign(f.exampleTrip(), patch);
 const withSector = (t, stop, sc = null) => { t.stops.push(stop); t.actual.push(""); t.refuel.push(false); t.scen.push(sc); t.alt.push(null); t.alt2.push(null); return t; };
 const gates = (r) => r.sec.map((s) => s.gate);
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -123,7 +123,7 @@ check("VFR leg has no alternate", v.needAlts === 0 && !v.rows.some((x) => /Alter
 check("VFR leg table: Start & Taxi · Trip · Contingency · Final Reserve (VFR day 100) summing to its minimum", eq(v.rows.map((x) => x.item), ["Start & Taxi", "Trip", "Contingency", "Final Reserve"]) && v.rows[3].req === "VFR day" && v.rows[3].kg === 100 && v.rows.reduce((a, x) => a + x.kg, 0) === v.gate);
 check("same trip flown IFR (B) needs more: 475 / 352", eq(gates(P.computeTrip({ ...tV, scen: ["B", "B"] })), [475, 352]));
 check("VFR is offered for every destination, PinS sites included", P.stopSites().every((s) => P.profilesFor(s).allowed.includes("VFR")));
-check("a VFR sector into a PinS site is accepted (not forced back to C)", P.computeTrip({ ...f.freshTrip(), scen: ["VFR", null, null] }).sec[0].sc === "VFR");
+check("a VFR sector into a PinS site is accepted (not forced back to C)", P.computeTrip({ ...f.exampleTrip(), scen: ["VFR", null, null] }).sec[0].sc === "VFR");
 const rV4 = P.computeTrip(withSector(trip(), "EGKK", "VFR"));
 check("default trip + VFR leg to Gatwick: 759 / 565 / 365 / 140 (VFR = VMC 260 − 70 approach − 50 reserve)", eq(gates(rV4), [759, 565, 365, 140]));
 const dV = clone(f.DATA); dV.aircraft.final_reserve_vfr_day_kg = 120;
@@ -131,7 +131,21 @@ check("VFR reserve read from the dataset (120 → +20)", f.makePlanner(dV).compu
 check("six profiles in order, VFR hint NO ALTN / NO APP", eq(f.SCENARIO_ORDER, ["VMC", "A", "B", "C", "D", "VFR"]) && f.SCENARIO_HINT.VFR.join(" ") === "NO ALTN NO APP");
 
 // ── trip normalisation (stored trips) ──
-check("garbage / unknown stops → default trip", eq(P.normalizeTrip(null).stops, f.DEFAULT_TRIP.stops) && eq(P.normalizeTrip({ stops: ["EGKR", "XXXX"] }).stops, f.DEFAULT_TRIP.stops));
+check("garbage / unknown stops → a blank trip", eq(P.normalizeTrip(null).stops, ["", ""]) && eq(P.normalizeTrip({ stops: ["EGKR", "XXXX"] }).stops, ["", ""]));
+// ── blank trips (first open / RESET) ──
+check("the default (fresh) trip is totally blank: two empty stops, nothing entered", eq(f.freshTrip().stops, ["", ""]) && eq(f.freshTrip().actual, ["", ""]) && f.freshTrip().scen.length === 1);
+check("the example route exists only for tests (EGKR → EGKD → EGKC → EGKR)", eq(f.exampleTrip().stops, ["EGKR", "EGKD", "EGKC", "EGKR"]));
+check("a stored trip with blank stops is kept blank (not replaced)", eq(P.normalizeTrip({ stops: ["EGKR", ""], actual: ["820", ""] }).stops, ["EGKR", ""]));
+const rb = P.computeTrip(f.freshTrip());
+check("blank trip computes without error: incomplete, no minimum, no headline figure", !rb.complete && rb.sec.length === 1 && rb.sec[0].incomplete && rb.sec[0].gate === null && rb.headline.gate === null && rb.landing === null);
+const rp = P.computeTrip({ ...clone(f.exampleTrip()), stops: ["EGKR", "EGKD", "", "EGKR"] });
+check("one blank stop in the middle: both sectors touching it are incomplete, the plan is incomplete", !rp.complete && rp.sec[1].incomplete && rp.sec[2].incomplete && !rp.sec[0].incomplete && rp.sec[1].rows.length === 0);
+check("a sector behind a blank stop has no minimum (nothing can be chained through a gap)", rp.sec[0].gate === null || rp.sec[0].gate === rp.sec[0].own);
+// ── contingency (CONFIRMED by Ed): 10% of each sector's trip, burnt on that sector, nothing carried forward ──
+const rc = P.computeTrip(trip({ actual: ["820", "", "", ""] }));
+check("contingency row reads '10% of trip, burnt this leg'", rc.sec.every((s) => s.rows.find((x) => x.item === "Contingency").req === "10% of trip, burnt this leg"));
+check("planned fuel at EGKD = 820 − taxi 30 − trip − contingency − 70 approach (626): contingency is NOT carried forward", rc.planned[1] === 820 - 30 - rc.sec[0].trip - rc.sec[0].cont - 70 && rc.planned[1] === 626);
+check("dataset records the contingency rule as confirmed", /CONFIRMED by Ed/.test(f.DATA.oma_rules.multi_sector.contingency) && /burnt on that sector/.test(f.DATA.oma_rules.multi_sector.contingency));
 check("short arrays are padded; non-digits stripped", (() => { const n = P.normalizeTrip({ stops: ["EGKR", "EGKK", "EGKC"], actual: ["8a20"] }); return n.actual.length === 3 && n.actual[0] === "820" && n.scen.length === 2 && n.refuel.length === 3; })());
 
 // ── dataset integrity ──

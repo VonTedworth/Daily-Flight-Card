@@ -80,7 +80,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v13";
+const APP_VERSION = "v14";
 // The user guide (rendered on GitHub). Opening it needs signal; the app itself does not.
 const README_URL = "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md";
 const BUILD_DATE = typeof window !== "undefined" && window.__BUILD_DATE__ ? window.__BUILD_DATE__ : "";
@@ -2019,12 +2019,12 @@ function makeTripPdf(r, meta) {
   y += 5;
   para("OPEN ITEMS (awaiting confirmation; implemented as stated)", 8.5, DARK, "bold");
   [
-    "1. Contingency 10% per sector, planned as used, nothing carried forward.",
-    "2. PinS in clear VMC: never planned without an alternate (OMA 8.3.2.7.7).",
-    "3. PinS approach status: procedures marked CONFIRM / PLANNED are not yet confirmed as published and usable.",
-    "4. Site coordinates: East Brighton Park (EGGB) user-supplied; all others to be verified.",
-    "5. The OMA PinS text is a provisional starting position and may change.",
+    "1. PinS in clear VMC: never planned without an alternate (OMA 8.3.2.7.7).",
+    "2. PinS approach status: the PinS procedures are not yet confirmed as published and usable.",
+    "3. Site coordinates: East Brighton Park (EGGB) user-supplied; all others to be verified.",
+    "4. The OMA PinS text is a provisional starting position and may change.",
   ].forEach((t) => para(t, 7.8, GREY));
+  para("Contingency (confirmed): 10% of each sector's trip, treated as burnt on that sector - none of it is assumed left for the next leg.", 7.8, GREY);
 
   const pages = doc.getNumberOfPages();
   for (let p = 1; p <= pages; p++) {
@@ -2225,7 +2225,7 @@ function IfrFuel() {
   };
   const addSector = () =>
     update((t) => {
-      t.stops.push("EGKK");
+      t.stops.push("");
       t.actual.push("");
       t.refuel.push(false);
       t.scen.push(null);
@@ -2281,11 +2281,12 @@ function IfrFuel() {
   });
 
   const head = r.headline;
+  const planReady = r.complete && r.sec.every((s) => s.gate !== null);
   const headBad = head.entered && head.margin !== null && head.margin < 0;
   const headColor = !head.entered ? C.cyan : headBad ? C.amber : C.green;
 
   const card = (i) => {
-    const st = stopSites.find((x) => x.id === trip.stops[i]) || FUEL_DATA.sites.find((x) => x.id === trip.stops[i]);
+    const st = stopSites.find((x) => x.id === trip.stops[i]) || null; // null = not chosen yet
     const last = i === n - 1;
     const mid = i > 0 && !last;
     const rf = r.refuelAt[i];
@@ -2299,14 +2300,15 @@ function IfrFuel() {
         style={{ background: C.inputBg, border: `1px solid ${warn ? C.amber : rf ? C.cyan : C.edge}`, borderRadius: 8, padding: "9px 11px" }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <select aria-label={`stop ${i + 1}`} value={st.id} onChange={(e) => changeStop(i, e.target.value)} style={selectStyle}>
+          <select aria-label={`stop ${i + 1}`} value={st ? st.id : ""} onChange={(e) => changeStop(i, e.target.value)} style={selectStyle}>
+            <option value="">SELECT</option>
             {stopSites.map((x) => (
               <option key={x.id} value={x.id}>
                 {siteName(x)}
               </option>
             ))}
           </select>
-          {mid && planner.hasFuel(st) && (
+          {mid && st && planner.hasFuel(st) && (
             <button data-refuel={i} onClick={() => toggleRefuel(i)} aria-pressed={rf} style={pill(rf)}>
               REFUEL HERE
             </button>
@@ -2378,6 +2380,15 @@ function IfrFuel() {
 
   const sector = (i) => {
     const s = r.sec[i];
+    if (s.incomplete) {
+      return (
+        <div key={`sec-${i}`} data-sector={i} style={{ marginLeft: 14, borderLeft: `1px solid ${C.edge}`, padding: "8px 0 8px 12px" }}>
+          <div data-sector-line={i} data-incomplete style={{ fontFamily: mono, fontSize: 10, color: C.grey }}>
+            → {s.from ? "SELECT THE NEXT STOP" : "SELECT THIS STOP"}
+          </div>
+        </div>
+      );
+    }
     const noAlt = s.needAlts === 0;
     const altTxt = noAlt ? "NO ALTN" : s.error ? "NO VALID ALTN" : "ALTN " + s.a1.id + (s.needAlts === 2 ? "+" + s.a2.id : "");
     const isOpen = !!open[i];
@@ -2510,13 +2521,19 @@ function IfrFuel() {
       <PanelHeader title="IFR FUEL" subtitle="AW169 · OMB34" />
       <IfrMap result={r} note={mapNote} onTap={tapMap} />
 
-      <div data-headline style={{ border: `1px solid ${headBad ? C.amber : C.green}80`, borderRadius: 8, padding: "11px 13px", marginBottom: 16 }}>
+      <div data-headline style={{ border: `1px solid ${!r.complete ? C.edge : headBad ? C.amber : C.green}80`, borderRadius: 8, padding: "11px 13px", marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <span style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", color: C.grey }}>REQUIRED TO LIFT {head.site}</span>
+          <span style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", color: C.grey }}>REQUIRED TO LIFT {head.site || ""}</span>
           <span style={{ fontFamily: mono, fontSize: 20, fontWeight: 700, color: headColor }}>{head.gate === null ? "—" : `${head.gate} KG`}</span>
         </div>
         <div data-verdict style={{ marginTop: 6, fontFamily: mono, fontSize: 10.5, fontWeight: 600, textAlign: "right", color: !head.entered ? C.grey : headBad ? C.amber : C.green }}>
-          {!head.entered || head.margin === null ? `ENTER FUEL AT ${head.site}` : headBad ? `SHORT ${head.margin} KG` : `ENOUGH ${signed(head.margin)} KG`}
+          {!r.complete
+            ? "SELECT EVERY STOP TO PLAN"
+            : !head.entered || head.margin === null
+            ? `ENTER FUEL AT ${head.site}`
+            : headBad
+            ? `SHORT ${head.margin} KG`
+            : `ENOUGH ${signed(head.margin)} KG`}
         </div>
       </div>
 
@@ -2540,8 +2557,8 @@ function IfrFuel() {
       <button
         data-export-pdf
         onClick={exportPdf}
-        disabled={exporting}
-        style={{ ...btnStyle(C.green), marginTop: 8, padding: "10px 0", fontSize: 10, opacity: exporting ? 0.5 : 1 }}
+        disabled={exporting || !planReady}
+        style={{ ...btnStyle(C.green), marginTop: 8, padding: "10px 0", fontSize: 10, opacity: exporting || !planReady ? 0.4 : 1 }}
       >
         {exporting ? "PREPARING PDF…" : "EXPORT PLAN (PDF)"}
       </button>

@@ -6,6 +6,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const emptyRows = () => Array.from({ length: 7 }, () => ({ fltTime: "", shtdwn: "", fuel: "", notes: "", refuel: false, upliftL: "", hems: false, hemsGrid: "", patientKg: "" }));
 const CARD = JSON.stringify({ date: "14.07.2026", acReg: "G-KSST", srp: "1234", gwDep: "4600", varField: "4650", vertField: "4550",
   plannedFuel: "650", hoursAvail: "9:00", sunriseSet: "", rows: emptyRows(), misc: "", powerChecks: [] });
+const EXAMPLE = JSON.stringify({ stops: ["EGKR", "EGKD", "EGKC", "EGKR"], actual: ["", "", "", ""], refuel: [false, false, false, false], scen: [null, null, null], alt: [null, null, null], alt2: [null, null, null] });
 const res = [];
 const check = (n, ok) => res.push([n, !!ok]);
 
@@ -16,7 +17,8 @@ function open(storedTrip) {
   const dom = new JSDOM(html, { runScripts: "dangerously", url: "https://x.github.io/", pretendToBeVisual: true, virtualConsole: vc,
     beforeParse(w) {
       w.localStorage.setItem("daily-flight-card", CARD);
-      if (storedTrip !== undefined) w.localStorage.setItem("ifr-fuel-trip", storedTrip);
+      const seed = storedTrip === undefined ? EXAMPLE : storedTrip;
+      if (seed !== null) w.localStorage.setItem("ifr-fuel-trip", seed);
       w.fetch = () => { net++; return Promise.reject(new Error("network")); };
       w.XMLHttpRequest = function () { net++; throw new Error("network"); };
       w.WebSocket = function () { net++; throw new Error("network"); };
@@ -41,8 +43,8 @@ function open(storedTrip) {
   const { q, qa, tx, click, btn, setSelect, type, mins, stopSel } = A;
   click(btn("IFR FUEL")); await sleep(200);
 
-  // ── default trip ──
-  check("default trip: 4 stop cards EGKR · EGKD · EGKC · EGKR", qa("[data-stop]").length === 4 && [0, 1, 2, 3].map((i) => stopSel(i).value).join() === "EGKR,EGKD,EGKC,EGKR");
+  // ── example trip (seeded; the app itself never pre-fills a route) ──
+  check("example trip: 4 stop cards EGKR · EGKD · EGKC · EGKR", qa("[data-stop]").length === 4 && [0, 1, 2, 3].map((i) => stopSel(i).value).join() === "EGKR,EGKD,EGKC,EGKR");
   check("3 collapsed sector lines between the cards", qa("[data-sector-line]").length === 3);
   check("headline: REQUIRED TO LIFT EGKR 759 KG", tx("[data-headline]").includes("REQUIRED TO LIFT EGKR") && tx("[data-headline]").includes("759 KG"));
   check("no fuel entered yet: calm 'ENTER FUEL AT EGKR', no ENOUGH/SHORT", tx("[data-verdict]") === "ENTER FUEL AT EGKR");
@@ -92,7 +94,13 @@ function open(storedTrip) {
 
   // ── a fourth sector ──
   click(q("[data-add-sector]")); await sleep(80);
-  check("+ ADD SECTOR adds a stop (EGKK) and a sector line", qa("[data-stop]").length === 5 && stopSel(4).value === "EGKK" && qa("[data-sector-line]").length === 4);
+  check("+ ADD SECTOR adds a BLANK stop and a sector line", qa("[data-stop]").length === 5 && stopSel(4).value === "" && qa("[data-sector-line]").length === 4);
+  check("…the new sector reads '→ SELECT THE NEXT STOP' and does not open", tx('[data-sector-line="3"]').includes("SELECT THE NEXT STOP") && q('[data-sector-line="3"]').hasAttribute("data-incomplete"));
+  check("…the headline asks for every stop instead of giving a verdict", tx("[data-verdict]") === "SELECT EVERY STOP TO PLAN" && !/ENOUGH|SHORT/.test(tx("[data-headline]")));
+  check("…no minimums are shown while a stop is missing", mins().every((m) => m === "—"));
+  check("…EXPORT PLAN (PDF) is disabled until every stop is chosen", q("[data-export-pdf]").disabled);
+  await setSelect(stopSel(4), "EGKK");
+  check("choosing the stop completes the plan (EGKK) and re-enables export", stopSel(4).value === "EGKK" && !q("[data-export-pdf]").disabled && /^(ENOUGH|SHORT) /.test(tx("[data-verdict]")));
   check("Gatwick destination defaults to B", tx('[data-sector-line="3"]').includes("· B ·"));
   click(q('[data-sector-line="3"]')); await sleep(80);
   check("Gatwick destination offers all six profiles (incl. VFR)", ["VMC", "A", "B", "C", "D", "VFR"].every((c) => !chip(3, c).disabled));
@@ -146,18 +154,30 @@ function open(storedTrip) {
   click(q("[data-reset-cancel]")); await sleep(60);
   check("cancel keeps the trip", qa("[data-stop]").length === 2);
   click(q("[data-reset]")); await sleep(60); click(q("[data-reset-confirm]")); await sleep(80);
-  check("RESET restores the default trip with nothing entered", mins().join() === "759,565,365" && q('[data-actual="0"]').value === "" && JSON.parse(A.store()).stops.join() === "EGKR,EGKD,EGKC,EGKR");
+  const blank = (X) => X.qa("[data-stop]").length === 2 && X.stopSel(0).value === "" && X.stopSel(1).value === "" && X.q('[data-actual="0"]').value === "";
+  check("RESET gives a totally blank trip: two empty stops, nothing entered", blank(A) && JSON.parse(A.store()).stops.join() === ",");
+  check("…blank trip: one '→ SELECT THIS STOP' line, verdict SELECT EVERY STOP TO PLAN, export disabled",
+    tx('[data-sector-line="0"]').includes("SELECT THIS STOP") && tx("[data-verdict]") === "SELECT EVERY STOP TO PLAN" && q("[data-export-pdf]").disabled);
+  check("…no route lines on the map for a blank trip", qa('line[data-route="sector"]').length === 0 && qa('line[data-route="alternate"]').length === 0);
+  await setSelect(stopSel(0), "EGKR");
+  check("picking only the first stop: still incomplete, no crash", tx('[data-sector-line="0"]').includes("SELECT THE NEXT STOP") && tx("[data-verdict]") === "SELECT EVERY STOP TO PLAN" && A.errors.length === 0);
+  await setSelect(stopSel(1), "EGKD");
+  check("picking both stops plans the sector (EGKR → EGKD)", tx('[data-sector-line="0"]').includes("→ EGKD") && mins()[0] !== "—" && !q("[data-export-pdf]").disabled);
   check("RESET leaves the flight card's storage untouched", A.card() === CARD);
 
   // ── robustness ──
   const C = open("{not json");
   await sleep(2500);
   C.click(C.btn("IFR FUEL")); await sleep(200);
-  check("corrupt stored trip: falls back to the default trip, no crash", C.mins().join() === "759,565,365" && C.errors.length === 0);
+  check("corrupt stored trip: falls back to a blank trip, no crash", blank(C) && C.errors.length === 0);
   const D = open(JSON.stringify({ stops: ["EGKR", "NOPE"] }));
   await sleep(2500);
   D.click(D.btn("IFR FUEL")); await sleep(200);
-  check("stored trip naming an unknown site: falls back to the default trip", D.mins().join() === "759,565,365");
+  check("stored trip naming an unknown site: falls back to a blank trip", blank(D));
+  const E = open(null);
+  await sleep(2500);
+  E.click(E.btn("IFR FUEL")); await sleep(200);
+  check("first open (nothing stored): a blank trip, not a pre-filled route", blank(E) && E.errors.length === 0 && !/EGKR|EGKD|EGKC/.test(E.tx("[data-headline]")));
 
   // ── other tabs + offline ──
   click(btn("FLIGHTS")); await sleep(150);

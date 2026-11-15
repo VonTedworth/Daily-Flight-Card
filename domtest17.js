@@ -62,6 +62,8 @@ const emptyRows = () => Array.from({ length: 7 }, () => ({ fltTime: "", shtdwn: 
 let net = 0;
 const dom = new JSDOM(html, { runScripts: "dangerously", url: "https://x.github.io/", pretendToBeVisual: true, virtualConsole: new VirtualConsole(),
   beforeParse(w) {
+    // seed the example trip (the app itself opens blank)
+    w.localStorage.setItem("ifr-fuel-trip", JSON.stringify({ stops: ["EGKR", "EGKD", "EGKC", "EGKR"], actual: ["", "", "", ""], refuel: [false, false, false, false], scen: [null, null, null], alt: [null, null, null], alt2: [null, null, null] }));
     w.localStorage.setItem("daily-flight-card", JSON.stringify({ date: "14.07.2026", acReg: "G-KSST", srp: "1", gwDep: "4600", varField: "4650", vertField: "", plannedFuel: "650", hoursAvail: "9:00", sunriseSet: "", rows: emptyRows(), misc: "", powerChecks: [] }));
     w.fetch = () => { net++; return Promise.reject(new Error("network")); };
     w.XMLHttpRequest = function () { net++; throw new Error("network"); };
@@ -86,7 +88,7 @@ const joins = (l, a, b) => { const A = f.project(f.siteById(a).lat, f.siteById(a
   check(`all ${f.DATA.sites.length} dataset sites plotted as markers`, d.querySelectorAll("g[data-site]").length === f.DATA.sites.length);
   check("every hospital and PinS site carries its short label on the map", f.DATA.sites.filter(small).every((x) => d.querySelector(`text[data-label="${x.id}"]`)?.textContent === x.short));
 
-  // default trip EGKR → EGKD → EGKC → EGKR, alternates EGMD, EGLC, EGKK
+  // example trip EGKR → EGKD → EGKC → EGKR, alternates EGMD, EGLC, EGKK
   check("route drawn through all stops: 3 solid sector lines", lines("sector").length === 3 && joins(lines("sector")[0], "EGKR", "EGKD") && joins(lines("sector")[1], "EGKD", "EGKC") && joins(lines("sector")[2], "EGKC", "EGKR"));
   check("each sector's alternate drawn dashed from its destination (EGKD→EGMD, EGKC→EGLC, EGKR→EGKK)",
     lines("alternate").length === 3 && joins(lines("alternate")[0], "EGKD", "EGMD") && joins(lines("alternate")[1], "EGKC", "EGLC") && joins(lines("alternate")[2], "EGKR", "EGKK"));
@@ -94,6 +96,7 @@ const joins = (l, a, b) => { const A = f.project(f.siteById(a).lat, f.siteById(a
 
   // a sector switched to VMC drops its alternate from the map (no stale highlight)
   click(d.querySelector("[data-add-sector]")); await sleep(80);
+  { const sel = d.querySelector('select[aria-label="stop 5"]'); sel.value = "EGKK"; sel.dispatchEvent(new w.Event("change", { bubbles: true })); await sleep(80); }
   click(d.querySelector('[data-sector-line="3"]')); await sleep(80);
   click(d.querySelector('[data-chip="3:D"]')); await sleep(80);
   check("profile D draws both alternates (Gatwick → Biggin Hill and → Shoreham)", lines("alternate").some((l) => joins(l, "EGKK", "EGKB")) && lines("alternate").some((l) => joins(l, "EGKK", "EGKA")) && isSel("EGKA"));

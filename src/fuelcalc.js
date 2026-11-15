@@ -73,7 +73,18 @@ export function legKg(nm) {
 export const kgToL = (kg) => Math.round(kg / AC.fuel_density_kg_per_l);
 export const siteById = (id) => DATA.sites.find((s) => s.id === id) || null;
 
+// A new / reset trip is blank: two empty stops to choose. "" = stop not chosen yet.
 export const DEFAULT_TRIP = Object.freeze({
+  stops: ["", ""],
+  actual: ["", ""],
+  refuel: [false, false],
+  scen: [null],
+  alt: [null],
+  alt2: [null],
+});
+export const freshTrip = () => JSON.parse(JSON.stringify(DEFAULT_TRIP));
+// The brief's reference trip (§6) — used by the tests, never shown by default.
+export const EXAMPLE_TRIP = Object.freeze({
   stops: ["EGKR", "EGKD", "EGKC", "EGKR"],
   actual: ["", "", "", ""],
   refuel: [false, false, false, false],
@@ -81,7 +92,7 @@ export const DEFAULT_TRIP = Object.freeze({
   alt: [null, null, null],
   alt2: [null, null, null],
 });
-export const freshTrip = () => JSON.parse(JSON.stringify(DEFAULT_TRIP));
+export const exampleTrip = () => JSON.parse(JSON.stringify(EXAMPLE_TRIP));
 
 /** Build a planner over a dataset (tests pass modified copies; the app uses the bundled one). */
 export function makePlanner(data = DATA) {
@@ -120,7 +131,7 @@ export function makePlanner(data = DATA) {
 
   /** Make a stored trip safe to compute: valid ids, consistent array lengths. */
   function normalizeTrip(t) {
-    const ok = t && Array.isArray(t.stops) && t.stops.length >= 2 && t.stops.every((id) => stopSites().some((s) => s.id === id));
+    const ok = t && Array.isArray(t.stops) && t.stops.length >= 2 && t.stops.every((id) => id === "" || stopSites().some((s) => s.id === id));
     if (!ok) return freshTrip();
     const n = t.stops.length, m = n - 1;
     const pad = (arr, len, fill) => Array.from({ length: len }, (_, i) => (Array.isArray(arr) && arr[i] !== undefined ? arr[i] : fill));
@@ -141,6 +152,11 @@ export function makePlanner(data = DATA) {
     const refuelAt = (j) => j > 0 && j < n - 1 && !!t.refuel[j] && hasFuel(site(t.stops[j]));
     for (let i = 0; i < n - 1; i++) {
       const from = site(t.stops[i]), to = site(t.stops[i + 1]);
+      if (!from || !to) {
+        // a stop not chosen yet: nothing to compute for this sector (and the chain before it)
+        sec.push({ i, from, to, incomplete: true, profile: null, sc: null, vfr: false, needAlts: 0, list: [], a1: null, a2: null, far: null, auto: true, dist: null, trip: null, cont: null, burn: null, altNm: null, altKg: null, own: null, error: null });
+        continue;
+      }
       const prof = profilesFor(to);
       const sc = prof.allowed.includes(t.scen[i]) ? t.scen[i] : prof.default;
       const scen = rules.scenarios[sc];
@@ -179,7 +195,7 @@ export function makePlanner(data = DATA) {
     // Fuel chain, forwards: actual where entered, else planned (previous fuel − previous burn).
     const fuel = [], planned = [], uplift = [], margin = [];
     for (let i = 0; i < n; i++) {
-      planned[i] = i === 0 || fuel[i - 1] === null ? null : fuel[i - 1] - sec[i - 1].burn;
+      planned[i] = i === 0 || fuel[i - 1] === null || sec[i - 1].burn === null ? null : fuel[i - 1] - sec[i - 1].burn;
       const a = parseInt(t.actual[i], 10);
       const gate = i < n - 1 ? sec[i].gate : undefined;
       if (!isNaN(a)) fuel[i] = a;
@@ -190,11 +206,12 @@ export function makePlanner(data = DATA) {
     }
     // Requirement table per sector, summing to that site's minimum to lift (OMB §5.2.3 style).
     for (const s of sec) {
+      if (s.incomplete) { s.rows = []; continue; }
       const pct = Math.round(CONT * 100);
       const rows = [
         { item: "Start & Taxi", req: "Start and taxi", kg: TAXI },
         { item: "Trip", req: `${s.from.id}→${s.to.id} · ${Math.round(s.dist)} nm`, kg: s.trip },
-        { item: "Contingency", req: `${pct}% of trip`, kg: s.cont },
+        { item: "Contingency", req: `${pct}% of trip, burnt this leg`, kg: s.cont },
       ];
       const scen = rules.scenarios[s.sc];
       if (s.gate === null) rows.push({ item: "—", req: s.error || "chain incomplete", kg: null });
@@ -218,6 +235,7 @@ export function makePlanner(data = DATA) {
     }
     const entered = !isNaN(parseInt(t.actual[0], 10));
     return {
+      complete: t.stops.every((id) => id !== ""),
       trip: t, sec, fuel, planned, uplift, margin,
       refuelAt: Array.from({ length: n }, (_, j) => refuelAt(j)),
       headline: { site: t.stops[0], gate: sec[0].gate, entered, margin: entered ? margin[0] : null },

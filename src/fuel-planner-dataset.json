@@ -43,7 +43,7 @@
       "airfield_one_aid":   { "allowed": ["VMC", "B", "C", "D", "VFR"], "default": "B", "note": "A needs two approaches on independent aids" }
     },
     "multi_sector": {
-      "contingency": "10% of each sector's trip fuel, planned as used on every sector, nothing carried forward (OPEN — awaiting confirmation)",
+      "contingency": "10% of each sector's trip fuel, treated as burnt on that sector; nothing of it is assumed left for the next leg (CONFIRMED by Ed, Nov 2026)",
       "approach_per_arrival": 1,
       "default_alternate": "nearest valid alternate to the sector destination; user may change",
       "refuel_stop": "only at sites with fuel; uplift to at least the minimum to lift; breaks the chain"

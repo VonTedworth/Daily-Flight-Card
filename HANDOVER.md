@@ -121,11 +121,16 @@ should still be bumped every time.
   start & taxi, the engine-failure (<75 kg) and usable-fuel (904 kg) notes. Kept: profile
   hints and the approaches lines (now inside each sector's details). The map no longer
   selects fields; it draws the route and tapping a site shows what it is.
-- Open items (brief §7, kept as data, awaiting confirmation): contingency 10% per sector
-  planned as used; no PinS plan without an alternate; PinS procedure status; site
+- Open items (brief §7, kept as data, awaiting confirmation): no PinS plan without an alternate; PinS procedure status; site
   coordinates (EGGB user-supplied); OMA PinS text provisional.
 - Nov 2026 — IFR FUEL: VFR added as a sixth profile (data: oma_rules.scenarios.VFR, offered for every
   destination): start & taxi + trip + 10% contingency (same as IFR, Ed's choice) + VFR day final
   reserve 100; no approach, no alternate. Night VFR not covered. PLANNED/CONFIRM approach status is
   no longer displayed anywhere (all PinS are unofficial until plates exist); the `status` field
   stays in the data and still bars those sites from being alternates.
+- Nov 2026 (v14) — IFR FUEL opens blank and RESET TRIP clears to a blank trip (two empty stops),
+  at Ed's direction: no pre-filled Redhill → William Harvey → King's College → Redhill route
+  (that route now lives only in the tests, `exampleTrip()`). Incomplete trips show
+  "SELECT EVERY STOP TO PLAN", no minimums, and EXPORT PLAN (PDF) disabled. Contingency rule
+  CONFIRMED by Ed (closed as an open item): 10% of each sector's trip is burnt on that sector;
+  none of it is carried forward to the next leg (the maths already did this; wording only).
