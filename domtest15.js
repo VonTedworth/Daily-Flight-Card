@@ -22,7 +22,7 @@ const t0 = trip(); t0.actual[0] = "820";
 const r0 = P.computeTrip(t0);
 check("default trip stops EGKR → EGKD → EGKC → EGKR", eq(r0.trip.stops, ["EGKR", "EGKD", "EGKC", "EGKR"]));
 check("profile C on every sector (PinS destinations default to C)", r0.sec.every((s) => s.sc === "C"));
-check("nearest alternates EGMD, EGLC, EGKK", eq(r0.sec.map((s) => s.a1.id), ["EGMD", "EGLC", "EGKK"]) && r0.sec.every((s) => s.auto));
+check("nearest alternates EGMD, EGKB, EGKK (London City removed)", eq(r0.sec.map((s) => s.a1.id), ["EGMD", "EGKB", "EGKK"]) && r0.sec.every((s) => s.auto));
 check(`sector burns 194, 200, 136 (${r0.sec.map((s) => s.burn).join(", ")})`, eq(r0.sec.map((s) => s.burn), [194, 200, 136]));
 check(`MINIMUM TO LIFT 759, 565, 365 (${gates(r0).join(", ")})`, eq(gates(r0), [759, 565, 365]));
 check(`820 kg at the start → planned landing fuel 290 (${r0.landing})`, r0.landing === 290);
@@ -60,7 +60,7 @@ for (const id of ["EGKD", "EGKC", "EGRS", "EGGB", "EGKR"]) {
   check(`PinS destination ${id}: IFR profiles C and D only (+ VFR leg), default C`, eq(p.allowed, ["C", "D", "VFR"]) && p.default === "C");
 }
 check("Shoreham destination (RNP only): A not offered", !P.profilesFor(S("EGKA")).allowed.includes("A") && P.profilesFor(S("EGKA")).default === "B");
-for (const id of ["EGKK", "EGKB", "EGMD", "EGMC", "EGHI", "EGLL", "EGLC", "EGSS"]) check(`${id} destination: all five IFR profiles + VFR, default B`, eq(P.profilesFor(S(id)).allowed, ["VMC", "A", "B", "C", "D", "VFR"]) && P.profilesFor(S(id)).default === "B");
+for (const id of ["EGKK", "EGKB", "EGMD", "EGMC", "EGHI", "EGLL", "EGLF", "EGSS"]) check(`${id} destination: all five IFR profiles + VFR, default B`, eq(P.profilesFor(S(id)).allowed, ["VMC", "A", "B", "C", "D", "VFR"]) && P.profilesFor(S(id)).default === "B");
 const rPin = P.computeTrip(trip({ scen: ["B", "VMC", "A"] }));
 check("a PinS sector asked for B / VMC / A falls back to C", rPin.sec.every((s) => s.sc === "C"));
 
@@ -117,7 +117,7 @@ check("…while approach notes stay (Biggin Hill RNP 03 RF, NEW 2026)", f.approa
 const tV = { stops: ["EGKR", "EGKB", "EGKR"], actual: ["", "", ""], refuel: [false, false, false], scen: ["B", "VFR"], alt: [null, null], alt2: [null, null] };
 const rV = P.computeTrip(tV);
 const v = rV.sec[1];
-check("Biggin Hill IFR (B) then VFR to Redhill: minimums 366 / 153", eq(gates(rV), [366, 153]));
+check("Biggin Hill IFR (B, alternate Gatwick) then VFR to Redhill: minimums 373 / 153", eq(gates(rV), [373, 153]) && rV.sec[0].a1.id === "EGKK");
 check("VFR leg = start & taxi 30 + trip + 10% contingency + VFR day reserve 100 (no approach)", v.vfr && v.own === 30 + v.trip + v.cont + 100 && v.burn === 30 + v.trip + v.cont);
 check("VFR leg has no alternate", v.needAlts === 0 && !v.rows.some((x) => /Alternate|Approach/.test(x.item)));
 check("VFR leg table: Start & Taxi · Trip · Contingency · Final Reserve (VFR day 100) summing to its minimum", eq(v.rows.map((x) => x.item), ["Start & Taxi", "Trip", "Contingency", "Final Reserve"]) && v.rows[3].req === "VFR day" && v.rows[3].kg === 100 && v.rows.reduce((a, x) => a + x.kg, 0) === v.gate);
@@ -131,7 +131,7 @@ check("VFR reserve read from the dataset (120 → +20)", f.makePlanner(dV).compu
 check("six profiles in order, VFR hint NO ALTN / NO APP", eq(f.SCENARIO_ORDER, ["VMC", "A", "B", "C", "D", "VFR"]) && f.SCENARIO_HINT.VFR.join(" ") === "NO ALTN NO APP");
 
 // ── trip normalisation (stored trips) ──
-check("garbage / unknown stops → a blank trip", eq(P.normalizeTrip(null).stops, ["", ""]) && eq(P.normalizeTrip({ stops: ["EGKR", "XXXX"] }).stops, ["", ""]));
+check("garbage → a blank trip; an unknown stop (e.g. London City) goes blank, the rest is kept", eq(P.normalizeTrip(null).stops, ["", ""]) && eq(P.normalizeTrip({ stops: ["EGKR", "XXXX"] }).stops, ["EGKR", ""]) && eq(P.normalizeTrip({ stops: ["EGKR", "EGLC", "EGKD"], actual: ["800", "", ""] }).stops, ["EGKR", "", "EGKD"]) && P.normalizeTrip({ stops: ["EGKR", "EGLC", "EGKD"], actual: ["800", "", ""] }).actual[0] === "800");
 // ── blank trips (first open / RESET) ──
 check("the default (fresh) trip is totally blank: two empty stops, nothing entered", eq(f.freshTrip().stops, ["", ""]) && eq(f.freshTrip().actual, ["", ""]) && f.freshTrip().scen.length === 1);
 check("the example route exists only for tests (EGKR → EGKD → EGKC → EGKR)", eq(f.exampleTrip().stops, ["EGKR", "EGKD", "EGKC", "EGKR"]));
@@ -148,6 +148,13 @@ check("planned fuel at EGKD = 820 − taxi 30 − trip − contingency − 70 ap
 check("dataset records the contingency rule as confirmed", /CONFIRMED by Ed/.test(f.DATA.oma_rules.multi_sector.contingency) && /burnt on that sector/.test(f.DATA.oma_rules.multi_sector.contingency));
 check("short arrays are padded; non-digits stripped", (() => { const n = P.normalizeTrip({ stops: ["EGKR", "EGKK", "EGKC"], actual: ["8a20"] }); return n.actual.length === 3 && n.actual[0] === "820" && n.scen.length === 2 && n.refuel.length === 3; })());
 
+// ── London City removed, Farnborough added (Nov 2026, Ed: EGLC is approved-operators only) ──
+check("London City (EGLC) is gone: not a site, not a stop, never an alternate", !f.siteById("EGLC") && !P.stopSites().some((s) => s.id === "EGLC") && f.DATA.sites.every((s) => !P.alternatesFor(s).some((a) => a.id === "EGLC")));
+const LF = S("EGLF");
+check("Farnborough (EGLF) is an IFR airfield with fuel at the eAIP ARP (51 16 31N 000 46 39W)", LF && LF.type === "airfield_ifr" && LF.fuel === true && near(LF.lat, 51.2753, 0.0005) && near(LF.lon, -0.7775, 0.0005));
+check("Farnborough approaches: ILS 06/24 (3.5° GP) · LOC 06/24 · SRA 06/24 (2 NM)", eq(f.approachSummary("EGLF"), ["ILS 06/24 (3.5° GP)", "LOC 06/24", "SRA 06/24 (2 NM)"]));
+check("Farnborough as a destination: all profiles, default B; nearest alternate Heathrow", P.profilesFor(LF).key === "airfield" && P.profilesFor(LF).default === "B" && P.alternatesFor(LF)[0].id === "EGLL");
+check("Farnborough can be an alternate (non-GNSS approaches), e.g. for a PinS site", P.alternatesFor(S("EGKC")).some((s) => s.id === "EGLF"));
 // ── dataset integrity ──
 const stops = ids(P.stopSites());
 check("stops = every IFR airfield and PinS site (incl. Stansted, Redhill)", f.DATA.sites.filter((s) => s.type === "airfield_ifr" || s.type === "pins_site").every((s) => stops.includes(s.id)) && stops.includes("EGSS") && stops.includes("EGKR"));

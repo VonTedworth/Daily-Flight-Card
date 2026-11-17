@@ -80,7 +80,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v14";
+const APP_VERSION = "v15";
 // The user guide (rendered on GitHub). Opening it needs signal; the app itself does not.
 const README_URL = "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md";
 const BUILD_DATE = typeof window !== "undefined" && window.__BUILD_DATE__ ? window.__BUILD_DATE__ : "";

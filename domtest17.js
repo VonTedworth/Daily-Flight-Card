@@ -30,7 +30,7 @@ check("every site projects inside the viewBox", f.DATA.sites.every((s) => { cons
 // (Southend Airport is in Rochford District, Essex. Rochester is omitted: within ~200 m of the Medway/Kent
 // line, inside the map's simplification tolerance.)
 const expect = { EGKR: "Surrey", EGKK: "West Sussex", EGKB: "Bromley", EGKA: "West Sussex", EGMD: "Kent", EGMC: "Essex",
-  EGLL: "Hillingdon", EGLC: "Newham", EGHI: "Hampshire", EGMH: "Kent", EGSS: "Essex",
+  EGLL: "Hillingdon", EGLF: "Hampshire", EGHI: "Hampshire", EGMH: "Kent", EGSS: "Essex",
   EGRS: "Brighton and Hove", EGGB: "Brighton and Hove", EGKD: "Kent",
   H_MAID: "Kent", H_STM: "Isle of Wight", H_FPH: "Surrey", H_SGEN: "Southampton", H_QA: "Portsmouth",
   H_EDGH: "East Sussex", H_CONQ: "East Sussex", H_MMH: "Medway", H_DVH: "Kent", H_BROOM: "Essex" };
@@ -88,11 +88,11 @@ const joins = (l, a, b) => { const A = f.project(f.siteById(a).lat, f.siteById(a
   check(`all ${f.DATA.sites.length} dataset sites plotted as markers`, d.querySelectorAll("g[data-site]").length === f.DATA.sites.length);
   check("every hospital and PinS site carries its short label on the map", f.DATA.sites.filter(small).every((x) => d.querySelector(`text[data-label="${x.id}"]`)?.textContent === x.short));
 
-  // example trip EGKR → EGKD → EGKC → EGKR, alternates EGMD, EGLC, EGKK
+  // example trip EGKR → EGKD → EGKC → EGKR, alternates EGMD, EGKB, EGKK
   check("route drawn through all stops: 3 solid sector lines", lines("sector").length === 3 && joins(lines("sector")[0], "EGKR", "EGKD") && joins(lines("sector")[1], "EGKD", "EGKC") && joins(lines("sector")[2], "EGKC", "EGKR"));
-  check("each sector's alternate drawn dashed from its destination (EGKD→EGMD, EGKC→EGLC, EGKR→EGKK)",
-    lines("alternate").length === 3 && joins(lines("alternate")[0], "EGKD", "EGMD") && joins(lines("alternate")[1], "EGKC", "EGLC") && joins(lines("alternate")[2], "EGKR", "EGKK"));
-  check("stops and alternates highlighted; uninvolved fields not", ["EGKR", "EGKD", "EGKC", "EGMD", "EGLC", "EGKK"].every(isSel) && !isSel("EGSS") && !isSel("EGKA"));
+  check("each sector's alternate drawn dashed from its destination (EGKD→EGMD, EGKC→EGKB, EGKR→EGKK)",
+    lines("alternate").length === 3 && joins(lines("alternate")[0], "EGKD", "EGMD") && joins(lines("alternate")[1], "EGKC", "EGKB") && joins(lines("alternate")[2], "EGKR", "EGKK"));
+  check("stops and alternates highlighted; uninvolved fields not", ["EGKR", "EGKD", "EGKC", "EGMD", "EGKB", "EGKK"].every(isSel) && !isSel("EGSS") && !isSel("EGKA"));
 
   // a sector switched to VMC drops its alternate from the map (no stale highlight)
   click(d.querySelector("[data-add-sector]")); await sleep(80);

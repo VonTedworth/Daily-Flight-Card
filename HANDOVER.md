@@ -134,3 +134,10 @@ should still be bumped every time.
   "SELECT EVERY STOP TO PLAN", no minimums, and EXPORT PLAN (PDF) disabled. Contingency rule
   CONFIRMED by Ed (closed as an open item): 10% of each sector's trip is burnt on that sector;
   none of it is carried forward to the next leg (the maths already did this; wording only).
+- Nov 2026 (v15) — London City (EGLC) removed from the dataset entirely (stop, alternate, map):
+  Ed confirmed it is approved-operators only. Farnborough (EGLF) added as an IFR airfield from
+  UK eAIP AD 2 EGLF (AIRAC 29 Oct 2026): ARP 51°16'31"N 000°46'39"W, Jet A-1, ILS/DME, LOC/DME
+  and SRA 2 NM to 06 and 24, no RNP. A stored trip naming a site no longer in the dataset now
+  keeps its other stops and shows that one as SELECT (previously the whole trip was wiped).
+  Example-trip minimums unchanged (759/565/365; King's College's nearest alternate is now Biggin
+  Hill). Redhill → Biggin Hill (B) → Redhill VFR example: 366 → 373 kg (alternate now Gatwick).

@@ -54,7 +54,7 @@ Confidence note: approach *types* below are from public sources and general know
 | EGMC | Southend | ILS · 05 · RNP · 05/23 · VOR | |
 | EGHI | Southampton | ILS · 20 · RNP · 20/02 | VOR historically |
 | EGLL | Heathrow | ILS · all rwys (Cat III) · RNP | Plan ILS as Cat A |
-| EGLC | London City | ILS 5.5° steep · 09/27 · RNP AR · RNP | AW169 approved for steep approach (capable to 8°) — no constraint |
+| EGLF | Farnborough | ILS/DME · 06 & 24 · LOC/DME · 06 & 24 · SRA RTR 2 NM · 06 & 24 | No RNP approach published. 3.5° GP mandatory on all approaches. PPR; no rotors-running refuelling; helicopters normally VFR by day, IAPs on request. eAIP AIRAC 29 Oct 2026. (London City removed Nov 2026 — approved operators only.) |
 | EGSS | Stansted | ILS · 04 · ILS · 22 · RNP · 04/22 | Cat III field; plan ILS as Cat A. Northernmost site |
 
 ---
@@ -75,5 +75,5 @@ In Scenario A the "most-fuel approach" is the one the trip fuel is planned on; t
 
 ## Sources
 - OMA Part A Issue 7 Rev 1 (Aug 2026), Section 8H — minima tables (8.1.3.5), scenario rules (8.1.3.3.2).
-- UK eAIP (authority, verify current): https://www.aurora.nats.co.uk/htmlAIP/ — aerodrome pages `EG-AD-2.EGKK`, `EG-AD-2.EGKB`, `EG-AD-2.EGKA`, `EG-AD-2.EGMD`, `EG-AD-2.EGMC`, `EG-AD-2.EGHI`, `EG-AD-2.EGLL`, `EG-AD-2.EGLC`.
-- Biggin Hill RNP 03: [airspacechange.co.uk ACP201986](https://consultations.airspacechange.co.uk/biggin-hill-airport/biggin-hill-airport-21-rnav-acp/supporting_documents/21%20RNAV%20CONSULTATION%20DOCUMENT%20%20ACP201986%20Issue%201%20Approved.pdf) · London City steep/RNP AR: [CAA EGLC gateway](https://airspacechange.caa.co.uk/documents/download/7601)
+- UK eAIP (authority, verify current): https://www.aurora.nats.co.uk/htmlAIP/ — aerodrome pages `EG-AD-2.EGKK`, `EG-AD-2.EGKB`, `EG-AD-2.EGKA`, `EG-AD-2.EGMD`, `EG-AD-2.EGMC`, `EG-AD-2.EGHI`, `EG-AD-2.EGLL`, `EG-AD-2.EGLF`.
+- Biggin Hill RNP 03: [airspacechange.co.uk ACP201986](https://consultations.airspacechange.co.uk/biggin-hill-airport/biggin-hill-airport-21-rnav-acp/supporting_documents/21%20RNAV%20CONSULTATION%20DOCUMENT%20%20ACP201986%20Issue%201%20Approved.pdf)

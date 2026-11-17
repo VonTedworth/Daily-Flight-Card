@@ -53,10 +53,10 @@ function open(storedTrip) {
   check("last stop shows only PLANNED ON LANDING", !q('[data-stop="3"] [data-min]') && !!q("[data-landing]"));
   check("collapsed view: exactly three numbers per stop (min, actual, margin)", [0, 1, 2].every((i) => qa(`[data-stop="${i}"] [data-min], [data-stop="${i}"] [data-actual], [data-stop="${i}"] [data-margin]`).length === 3 && qa(`[data-stop="${i}"] input`).length === 1));
   check("sector line: → EGKD · 39 nm · C · ALTN EGMD · 194 KG", tx('[data-sector-line="0"]').includes("→ EGKD · 39 nm · C · ALTN EGMD") && tx('[data-sector-line="0"]').includes("194 KG"));
-  check("sector lines 2 and 3 name EGLC and EGKK; burns 200 and 136", tx('[data-sector-line="1"]').includes("ALTN EGLC") && tx('[data-sector-line="1"]').includes("200 KG") && tx('[data-sector-line="2"]').includes("ALTN EGKK") && tx('[data-sector-line="2"]').includes("136 KG"));
+  check("sector lines 2 and 3 name EGKB and EGKK; burns 200 and 136", tx('[data-sector-line="1"]').includes("ALTN EGKB") && tx('[data-sector-line="1"]').includes("200 KG") && tx('[data-sector-line="2"]').includes("ALTN EGKK") && tx('[data-sector-line="2"]').includes("136 KG"));
   check("no PLANNED / CONFIRM tags on the stop cards", qa("[data-status]").length === 0 && !qa("[data-stop]").some((c) => /PLANNED(?! ON LANDING)|CONFIRM/.test(c.textContent)));
   check("PinS sites and Redhill remain selectable", stopSel(0).value === "EGKR" && [...stopSel(1).options].some((o) => o.value === "EGKR"));
-  check("stop list = IFR airfields + PinS sites only (no plain hospitals or VFR refuel points)", (() => { const v = [...stopSel(0).options].map((o) => o.value); return v.includes("EGSS") && v.includes("EGGB") && v.includes("EGKD") && !v.some((x) => /^H_/.test(x)) && !v.includes("EGMH") && !v.includes("EGTO"); })());
+  check("stop list = IFR airfields (Farnborough in, London City out) + PinS sites only (no plain hospitals or VFR refuel points)", (() => { const v = [...stopSel(0).options].map((o) => o.value); return v.includes("EGSS") && v.includes("EGLF") && !v.includes("EGLC") && v.includes("EGGB") && v.includes("EGKD") && !v.some((x) => /^H_/.test(x)) && !v.includes("EGMH") && !v.includes("EGTO"); })());
   check("no REFUEL HERE at William Harvey (no fuel there yet)", !q('[data-stop="1"] [data-refuel]'));
   check("no 'what if fuel at William Harvey' control shipped", !A.d.getElementById("root").textContent.toUpperCase().includes("WHAT IF"));
   check("disclaimer shown", A.d.getElementById("root").textContent.includes("Planning cross-check only — not a certified flight-planning tool"));
@@ -173,7 +173,7 @@ function open(storedTrip) {
   const D = open(JSON.stringify({ stops: ["EGKR", "NOPE"] }));
   await sleep(2500);
   D.click(D.btn("IFR FUEL")); await sleep(200);
-  check("stored trip naming an unknown site: falls back to a blank trip", blank(D));
+  check("stored trip naming an unknown site: that stop goes blank, the rest is kept", D.stopSel(0).value === "EGKR" && D.stopSel(1).value === "" && D.errors.length === 0);
   const E = open(null);
   await sleep(2500);
   E.click(E.btn("IFR FUEL")); await sleep(200);

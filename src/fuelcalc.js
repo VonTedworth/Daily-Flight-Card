@@ -131,12 +131,14 @@ export function makePlanner(data = DATA) {
 
   /** Make a stored trip safe to compute: valid ids, consistent array lengths. */
   function normalizeTrip(t) {
-    const ok = t && Array.isArray(t.stops) && t.stops.length >= 2 && t.stops.every((id) => id === "" || stopSites().some((s) => s.id === id));
-    if (!ok) return freshTrip();
+    if (!t || !Array.isArray(t.stops) || t.stops.length < 2) return freshTrip();
+    // A stop that is no longer in the dataset (e.g. London City, removed Nov 2026) goes back
+    // to blank ("SELECT") rather than wiping the whole stored trip.
+    const known = (id) => typeof id === "string" && stopSites().some((s) => s.id === id);
     const n = t.stops.length, m = n - 1;
     const pad = (arr, len, fill) => Array.from({ length: len }, (_, i) => (Array.isArray(arr) && arr[i] !== undefined ? arr[i] : fill));
     return {
-      stops: [...t.stops],
+      stops: t.stops.map((id) => (known(id) ? id : "")),
       actual: pad(t.actual, n, "").map((v) => String(v || "").replace(/[^0-9]/g, "")),
       refuel: pad(t.refuel, n, false).map(Boolean),
       scen: pad(t.scen, m, null),
