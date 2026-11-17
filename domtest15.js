@@ -28,8 +28,21 @@ check(`MINIMUM TO LIFT 759, 565, 365 (${gates(r0).join(", ")})`, eq(gates(r0), [
 check(`820 kg at the start → planned landing fuel 290 (${r0.landing})`, r0.landing === 290);
 check("headline: required to lift EGKR 759, margin +61", r0.headline.gate === 759 && r0.headline.entered && r0.headline.margin === 61);
 check("no fuel entered at the start: lifts at exactly the minimum, headline not 'entered'", (() => { const r = P.computeTrip(trip()); return r.fuel[0] === 759 && !r.headline.entered && r.headline.margin === null; })());
-check("each sector's table sums to its minimum to lift", r0.sec.every((s) => s.rows.reduce((a, x) => a + x.kg, 0) === s.gate));
-check("onward chain governs sectors 1–2 (table ends 'Onward — min to lift next site')", r0.sec[0].useOnward && r0.sec[1].useOnward && !r0.sec[2].useOnward && r0.sec[0].rows[r0.sec[0].rows.length - 1].req === "Min to lift EGKD");
+check("each sector's own working always sums to its own OMA requirement", r0.sec.every((s) => s.rows.reduce((a, x) => a + x.kg, 0) === s.own));
+check("own working + onward extra = minimum to lift, on every sector", r0.sec.every((s) => s.own + (s.extra ? s.extra.kg : 0) === s.gate));
+check("onward chain governs sectors 1–2: own working still shown in full (alternate, approach, final reserve 150), then the onward extra",
+  r0.sec[0].useOnward && r0.sec[1].useOnward && !r0.sec[2].useOnward && !r0.sec[2].extra &&
+  ["Alternate", "Altn approach", "Final Reserve"].every((it) => r0.sec[0].rows.some((x) => x.item === it)) && r0.sec[0].rows.find((x) => x.item === "Final Reserve").kg === 150 &&
+  r0.sec[0].extra.item === "Onward legs" && r0.sec[0].extra.req === `burn ${r0.sec[0].burn} + min to lift EGKD 565 = ${r0.sec[0].burn + 565}` && r0.sec[0].extra.kg === 759 - r0.sec[0].own);
+// Ed's Lydd example: Redhill → Lydd profile D (EGKB + EGMC), 645 kg on board
+const rL = P.computeTrip({ stops: ["EGKR", "EGMD", "EGKR"], actual: ["645", "", ""], refuel: [false, false, false], scen: ["D", null], alt: ["EGKB", null], alt2: ["EGMC", null] });
+const L0 = rL.sec[0];
+check("Lydd example: own working shows alternate to the FARTHER (EGKB 41 nm, 88 kg), approach, final reserve 150 = 511",
+  L0.far.id === "EGKB" && L0.rows.find((x) => x.item === "Alternate").kg === 88 && L0.rows.find((x) => x.item === "Final Reserve").kg === 150 && L0.own === 511);
+check("commander's discretion: fuel at the stop (actual 645) less min to lift = discretionary", L0.fuelAt.kg === 645 && L0.fuelAt.kind === "actual" && L0.disc === 645 - L0.gate);
+check("…at a later stop the planned figure is used and labelled 'planned'", rL.sec[1].fuelAt.kind === "planned" && rL.sec[1].disc === rL.planned[1] - rL.sec[1].gate);
+check("…at the first stop nothing is assumed: no fuel line until a figure is entered", P.computeTrip({ ...clone(f.exampleTrip()) }).sec[0].fuelAt === null);
+check("…below the minimum the difference is negative (shown as BELOW MINIMUM)", P.computeTrip({ ...clone(f.exampleTrip()), actual: ["700", "", "", ""] }).sec[0].disc === 700 - 759);
 
 // ── William Harvey with fuel + REFUEL HERE ──
 const dW = clone(f.DATA); dW.sites.find((s) => s.id === "EGKD").fuel = true;

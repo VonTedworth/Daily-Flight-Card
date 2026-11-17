@@ -206,9 +206,14 @@ export function makePlanner(data = DATA) {
       else fuel[i] = planned[i];
       margin[i] = i < n - 1 && fuel[i] !== null && gate !== null ? fuel[i] - gate : null;
     }
-    // Requirement table per sector, summing to that site's minimum to lift (OMB §5.2.3 style).
+    // Requirement table per sector (OMB §5.2.3 style). ALL the working is always shown:
+    //   rows      = this leg's own OMA requirement, summing to s.own (never hidden)
+    //   extra     = when the onward chain needs more: the extra carried for later legs
+    //               (rows + extra sum to the minimum to lift)
+    //   fuelAt    = fuel at this stop (actual, or planned) and disc = fuel − minimum:
+    //               above the minimum is the commander's discretion; below it is SHORT.
     for (const s of sec) {
-      if (s.incomplete) { s.rows = []; continue; }
+      if (s.incomplete) { s.rows = []; s.extra = null; s.fuelAt = null; s.disc = null; continue; }
       const pct = Math.round(CONT * 100);
       const rows = [
         { item: "Start & Taxi", req: "Start and taxi", kg: TAXI },
@@ -216,11 +221,8 @@ export function makePlanner(data = DATA) {
         { item: "Contingency", req: `${pct}% of trip, burnt this leg`, kg: s.cont },
       ];
       const scen = rules.scenarios[s.sc];
-      if (s.gate === null) rows.push({ item: "—", req: s.error || "chain incomplete", kg: null });
-      else if (s.useOnward) {
-        if (s.arrivalApps) rows.push({ item: "IFR Approach", req: `${PER_ARRIVAL} × ${APP} kg at ${s.to.id}`, kg: PER_ARRIVAL * APP });
-        rows.push({ item: "Onward", req: `Min to lift ${s.to.id}`, kg: sec[s.i + 1].gate });
-      } else if (s.vfr) {
+      if (s.own === null) rows.push({ item: "—", req: s.error || "no valid alternate", kg: null });
+      else if (s.vfr) {
         rows.push({ item: "Final Reserve", req: "VFR day", kg: s.reserve });
       } else if (!s.needAlts) {
         const nApp = scen.approaches_default;
@@ -234,6 +236,19 @@ export function makePlanner(data = DATA) {
         rows.push({ item: "Final Reserve", req: "30 min holding", kg: RESERVE });
       }
       s.rows = rows;
+      // Extra carried for the legs after this one (no refuel before them).
+      s.extra = null;
+      if (s.own !== null && s.gate === null) s.extra = { item: "Onward legs", req: "select every stop", kg: null };
+      else if (s.own !== null && s.useOnward) {
+        const next = sec[s.i + 1].gate;
+        s.extra = { item: "Onward legs", req: `burn ${s.burn} + min to lift ${s.to.id} ${next} = ${s.burn + next}`, kg: s.gate - s.own };
+      }
+      // Fuel at this stop and the commander's discretion. At the first stop nothing is assumed:
+      // only an entered figure counts.
+      const j = s.i, typed = !isNaN(parseInt(t.actual[j], 10));
+      s.fuelAt = s.gate === null || fuel[j] === null || (j === 0 && !typed) ? null
+        : { kg: fuel[j], kind: typed ? (refuelAt(j) ? "after refuel" : "actual") : refuelAt(j) ? "planned after refuel" : "planned" };
+      s.disc = s.fuelAt ? s.fuelAt.kg - s.gate : null;
     }
     const entered = !isNaN(parseInt(t.actual[0], 10));
     return {

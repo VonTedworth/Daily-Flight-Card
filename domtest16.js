@@ -88,7 +88,14 @@ function open(storedTrip) {
   check("PinS destination: Shoreham is not in the alternate list", ![...pick.options].some((o) => o.value === "EGKA"));
   const kgSum = qa('[data-detail="0"] [data-row]').reduce((a, r) => a + (+r.lastElementChild.textContent || 0), 0);
   check(`table sums to the minimum to lift (${kgSum} = 759)`, kgSum === 759 && q('[data-row-total="0"]').textContent.includes("759"));
-  check("onward chain governs: table ends 'Onward — Min to lift EGKD'", qa('[data-detail="0"] [data-row]').pop().textContent.includes("Min to lift EGKD"));
+  check("onward chain governs: full own working, 'This leg (OMA)' subtotal, then 'Onward legs … min to lift EGKD'",
+    ["Alternate", "Altn approach", "Final Reserve"].every((it) => qa('[data-detail="0"] [data-row]').some((r) => r.textContent.startsWith(it))) &&
+    !!q('[data-subtotal="0"]') && q('[data-subtotal="0"]').textContent.includes("This leg (OMA)") &&
+    qa('[data-detail="0"] [data-row]').pop().textContent.includes("min to lift EGKD 565") && q('[data-row-total="0"]').textContent.includes("+"));
+  const own0 = +q('[data-subtotal="0"]').lastElementChild.textContent;
+  const ownSum = qa('[data-detail="0"] [data-row]').filter((r) => !r.hasAttribute("data-extra")).reduce((a, r) => a + (+r.lastElementChild.textContent || 0), 0);
+  check(`own working sums to the 'This leg (OMA)' subtotal (${ownSum} = ${own0})`, ownSum === own0);
+  check("fuel at EGKR (actual 820) and Discretionary +61 shown under MIN TO LIFT", q('[data-fuel-at="0"]').textContent.includes("820") && q('[data-fuel-at="0"]').textContent.includes("actual") && q('[data-disc="0"]').textContent.includes("Discretionary") && q('[data-disc="0"]').textContent.includes("commander") && q('[data-disc="0"]').lastElementChild.textContent === "+61");
   await setSelect(pick, "EGKK");
   check("choosing an alternate marks it 'chosen'; the minimum stays 759 (onward chain governs)", q('[data-detail="0"]').textContent.includes("chosen") && mins()[0] === "759" && tx('[data-sector-line="0"]').includes("ALTN EGKK"));
 

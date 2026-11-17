@@ -141,3 +141,9 @@ should still be bumped every time.
   keeps its other stops and shows that one as SELECT (previously the whole trip was wiped).
   Example-trip minimums unchanged (759/565/365; King's College's nearest alternate is now Biggin
   Hill). Redhill → Biggin Hill (B) → Redhill VFR example: 366 → 373 kg (alternate now Gatwick).
+- Nov 2026 (v16) — IFR sector tables always show the full own OMA working (alternate, approaches,
+  final reserve), then "This leg (OMA)", the "Onward legs" extra and MIN TO LIFT, then the fuel at
+  that stop and "Discretionary" (commander's discretion = fuel − min to lift; BELOW MINIMUM if
+  negative). Ed: "all the working is shown … so someone else doesn't go 'where has that figure gone?'"
+  Previously, when the onward chain governed, the own working (incl. final reserve) was replaced by
+  a single Onward line. Display only — no minimum changed. Do not hide working again.

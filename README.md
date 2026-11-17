@@ -194,14 +194,30 @@ Fuel then runs forwards: at each stop it is the **ACTUAL** figure if you entered
 **REFUEL HERE** appears on a mid-trip stop whose site has fuel (every airfield; no PinS site yet). It breaks the chain at that stop, relabels the input **AFTER REFUEL KG**, and shows *ARRIVE WITH n KG · UPLIFT AT LEAST n KG* (or that no uplift is needed). William Harvey has `fuel: false` (`fuel_planned: true`); when fuel arrives there it is a one-line dataset change.
 
 ### Screen
-Map (route through every stop solid, each sector's alternate(s) dashed; tap a site to see what it is) → **REQUIRED TO LIFT** headline with ENOUGH/SHORT against the fuel entered at the first stop → one card per stop with three numbers (MIN TO LIFT · ACTUAL KG · MARGIN) → between cards a collapsed sector line (destination · distance · profile · alternate(s) · sector burn) → **+ ADD SECTOR**, **EXPORT PLAN (PDF)**, **RESET TRIP**. Tap the line for the profile strip, its description, the approaches at the destination and alternate(s), the alternate picker(s), and the OMB §5.2.3-style table (MIN TO LIFT · REQUIREMENT · L · KG) summing to that site's minimum — ending **Onward — min to lift next site** when the onward chain governs.
+Map (route through every stop solid, each sector's alternate(s) dashed; tap a site to see what it is) → **REQUIRED TO LIFT** headline with ENOUGH/SHORT against the fuel entered at the first stop → one card per stop with three numbers (MIN TO LIFT · ACTUAL KG · MARGIN) → between cards a collapsed sector line (destination · distance · profile · alternate(s) · sector burn) → **+ ADD SECTOR**, **EXPORT PLAN (PDF)**, **RESET TRIP**. Tap the line for the profile strip, its description, the approaches at the destination and alternate(s), the alternate picker(s), and the OMB §5.2.3-style table (MIN TO LIFT · REQUIREMENT · L · KG) — see *The sector table* below.
+
+### The sector table — all the working, always shown
+Every sector's table shows the **whole OMA working for that leg on its own**, whatever governs the minimum, so no figure ever disappears:
+
+| Line | What it is |
+|---|---|
+| Start & Taxi · Trip · Contingency · IFR Approach | the leg itself (burn) |
+| Alternate · Altn approach (B/C/D) — or a 2nd approach / 15 min (A) | the profile's extra; D is planned to the **farther** alternate |
+| Final Reserve | 150 kg (30 min holding), or 100 kg VFR day |
+| **This leg (OMA)** | sum of the lines above — shown when later legs need more |
+| **Onward legs** | the extra carried because the next stop's minimum must be on board when you get there: *burn this leg + min to lift next stop − this leg (OMA)* |
+| **MIN TO LIFT** | This leg (OMA) + Onward legs (shown as e.g. *511 + 124*) |
+| **Fuel at** stop | the actual figure entered, or the planned figure (labelled *planned* / *after refuel*) |
+| **Discretionary** | fuel at the stop − MIN TO LIFT: what is above the minimum is the **commander's discretion**; below zero it reads **BELOW MINIMUM** in amber |
+
+Example (Ed's): Redhill → Lydd, profile D (Biggin Hill 41 nm + Southend 38 nm → planned to Biggin Hill, the farther) → Redhill, 645 kg on board: 30 + 94 + 9 + 70 + alternate 88 + 70 + final reserve 150 = **This leg 511**; Onward legs: burn 203 + min to lift Lydd 432 = 635 → **+124**; **MIN TO LIFT 635**; fuel 645 actual; **Discretionary +10**. At the first stop no fuel line appears until a figure is entered — nothing is assumed.
 
 ### Export plan (PDF)
 **EXPORT PLAN (PDF)** (between + ADD SECTOR and RESET TRIP) builds a one- or two-page A4 PDF of the plan exactly as on screen and opens the share sheet (save to Files, Mail, etc.). It works offline. File name: `IFR FUEL <route> <dd.mm.yyyy> <hhmm>.pdf`, e.g. `IFR FUEL EGKR-EGKD-EGKC-EGKR 15.11.2026 1803.pdf`. Contents:
 - header with date/time, the disclaimer, the **app version** and **every figure the sums used** (130 kt, 280 kg/hr, start & taxi 30, approach 70, final reserve 150, contingency 10%, 15 min = 70, density 0.79) — so a plan can be re-checked by hand later;
 - the route, REQUIRED TO LIFT and the fuel entered at the first stop with ENOUGH/SHORT;
 - every stop: MIN TO LIFT, fuel (actual / planned / after refuel / planned on landing), margin, refuel uplift, and any BELOW MINIMUM warning;
-- every sector: distance, profile and its description, alternate(s) (nearest / chosen), sector burn, the approaches at the destination and alternate(s), and the full requirement table (MIN TO LIFT · REQUIREMENT · L · KG) summing to that site's minimum, noting when the onward chain governs;
+- every sector: distance, profile and its description, alternate(s) (nearest / chosen), sector burn, the approaches at the destination and alternate(s), and the full requirement table (MIN TO LIFT · REQUIREMENT · L · KG) laid out exactly as on screen: full own working, This leg (OMA), Onward legs, MIN TO LIFT, fuel at the stop and Discretionary;
 - the open items still awaiting confirmation, and the confirmed contingency rule.
 
 Exporting changes nothing in the trip or the flight card. Use it for record keeping and to error-check the planner against your own figures.

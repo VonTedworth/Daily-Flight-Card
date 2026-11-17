@@ -80,7 +80,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v15";
+const APP_VERSION = "v16";
 // The user guide (rendered on GitHub). Opening it needs signal; the app itself does not.
 const README_URL = "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md";
 const BUILD_DATE = typeof window !== "undefined" && window.__BUILD_DATE__ ? window.__BUILD_DATE__ : "";
@@ -2006,13 +2006,33 @@ function makeTripPdf(r, meta) {
       doc.text(row.kg === null ? "-" : String(row.kg), tx[3], y, { align: "right" });
       y += 3.9;
     });
+    const line = (item, req, l, kg, bold) => {
+      ensure(4);
+      font(bold ? "bold" : "normal", 8.5, DARK);
+      doc.text(pdfText(item), tx[0], y);
+      font("normal", 8, GREY);
+      doc.text(pdfText(req), tx[1], y);
+      font("normal", 8.5, DARK);
+      doc.text(l, tx[2], y, { align: "right" });
+      font("bold", 8.5, DARK);
+      doc.text(kg, tx[3], y, { align: "right" });
+      y += 3.9;
+    };
+    if (s.extra) {
+      line("This leg (OMA)", "sum of the lines above", s.own === null ? "-" : String(kgToL(s.own)), s.own === null ? "-" : String(s.own), true);
+      line(s.extra.item, s.extra.req, s.extra.kg === null ? "-" : `+${kgToL(s.extra.kg)}`, s.extra.kg === null ? "-" : `+${s.extra.kg}`);
+    }
     ensure(5);
     font("bold", 9, DARK);
     doc.text("MIN TO LIFT", tx[0], y);
+    if (s.extra && s.extra.kg !== null) { font("normal", 8, GREY); doc.text(`${s.own} + ${s.extra.kg}`, tx[1], y); font("bold", 9, DARK); }
     doc.text(s.gate === null ? "-" : String(kgToL(s.gate)), tx[2], y, { align: "right" });
     doc.text(s.gate === null ? "-" : String(s.gate), tx[3], y, { align: "right" });
-    y += 3.6;
-    if (s.useOnward) para("Onward chain governs: this site's minimum = this sector + the minimum to lift at the next site.", 7.6, GREY);
+    y += 4.2;
+    if (s.fuelAt) {
+      line(`Fuel at ${s.from.id}`, s.fuelAt.kind, String(kgToL(s.fuelAt.kg)), String(s.fuelAt.kg));
+      line(s.disc < 0 ? "BELOW MINIMUM" : "Discretionary", s.disc < 0 ? "short of min to lift" : "above min to lift - commander's discretion", signed(kgToL(s.disc)), signed(s.disc), true);
+    }
     y += 3;
   });
   rule();
@@ -2502,12 +2522,44 @@ function IfrFuel() {
                   <span style={{ ...cell, textAlign: "right", color: C.cyan, fontWeight: 600 }}>{row.kg === null ? "—" : row.kg}</span>
                 </div>
               ))}
-              <div data-row-total={i} style={cols}>
+              {s.extra && (
+                <>
+                  <div data-subtotal={i} style={{ ...cols, borderBottom: `1px solid ${C.edge}55` }}>
+                    <span style={{ ...cell, fontWeight: 700 }}>This leg (OMA)</span>
+                    <span style={{ ...cell, color: C.grey, fontSize: 9 }}>sum of the lines above</span>
+                    <span style={{ ...cell, textAlign: "right", color: C.grey, fontWeight: 700 }}>{s.own === null ? "—" : kgToL(s.own)}</span>
+                    <span style={{ ...cell, textAlign: "right", fontWeight: 700 }}>{s.own === null ? "—" : s.own}</span>
+                  </div>
+                  <div data-row={`${i}:extra`} data-extra={i} style={{ ...cols, borderBottom: `1px solid ${C.edge}55` }}>
+                    <span style={cell}>{s.extra.item}</span>
+                    <span style={{ ...cell, color: C.grey, fontSize: 9 }}>{s.extra.req}</span>
+                    <span style={{ ...cell, textAlign: "right", color: C.grey }}>{s.extra.kg === null ? "—" : `+${kgToL(s.extra.kg)}`}</span>
+                    <span style={{ ...cell, textAlign: "right", color: C.cyan, fontWeight: 600 }}>{s.extra.kg === null ? "—" : `+${s.extra.kg}`}</span>
+                  </div>
+                </>
+              )}
+              <div data-row-total={i} style={{ ...cols, borderTop: `1px solid ${C.edge}` }}>
                 <span style={{ ...cell, fontWeight: 700 }}>MIN TO LIFT</span>
-                <span />
+                <span style={{ ...cell, color: C.grey, fontSize: 9 }}>{s.extra && s.extra.kg !== null ? `${s.own} + ${s.extra.kg}` : ""}</span>
                 <span style={{ ...cell, textAlign: "right", fontWeight: 700 }}>{s.gate === null ? "—" : kgToL(s.gate)}</span>
                 <span style={{ ...cell, textAlign: "right", fontWeight: 700 }}>{s.gate === null ? "—" : s.gate}</span>
               </div>
+              {s.fuelAt && (
+                <>
+                  <div data-fuel-at={i} style={{ ...cols, borderTop: `1px solid ${C.edge}55` }}>
+                    <span style={cell}>Fuel at {s.from.id}</span>
+                    <span style={{ ...cell, color: C.grey, fontSize: 9 }}>{s.fuelAt.kind}</span>
+                    <span style={{ ...cell, textAlign: "right", color: C.grey }}>{kgToL(s.fuelAt.kg)}</span>
+                    <span style={{ ...cell, textAlign: "right" }}>{s.fuelAt.kg}</span>
+                  </div>
+                  <div data-disc={i} style={cols}>
+                    <span style={{ ...cell, fontWeight: 700, color: s.disc < 0 ? C.amber : C.green }}>{s.disc < 0 ? "BELOW MINIMUM" : "Discretionary"}</span>
+                    <span style={{ ...cell, color: C.grey, fontSize: 9 }}>{s.disc < 0 ? "short of min to lift" : "above min to lift — commander's discretion"}</span>
+                    <span style={{ ...cell, textAlign: "right", color: s.disc < 0 ? C.amber : C.green }}>{signed(kgToL(s.disc))}</span>
+                    <span style={{ ...cell, textAlign: "right", fontWeight: 700, color: s.disc < 0 ? C.amber : C.green }}>{signed(s.disc)}</span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
