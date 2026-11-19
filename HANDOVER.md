@@ -139,7 +139,9 @@ should still be bumped every time.
 - **Source:** AW169 RFM 169F0290X001 Supplement 3, Fig S3-13 "P&WC 210A Hover Power Check Chart -
   EAPS OFF", page S3-32, Issue 3 Rev 1. `PC_CHART` in `src/powercheck.js` holds the RFM PDF's own
   vector paths (17 pressure-altitude lines, 10 + 10 OAT lines), extracted from the PDF, not hand-traced.
-  **Do not edit PC_CHART** (or the maths) by hand. The page image is `assets/rfm-fig-s3-13-v1.jpg`
+  **Do not edit PC_CHART** (or the maths) by hand. The one sanctioned edit so far is fix 1 (v22, at Ed's
+  direction): two lines at the top of `interpFamily` so a value exactly on a drawn line reads that line
+  alone — file now 10,088 bytes, sha256 f4466e8e… (domtest25 checks it). The page image is `assets/rfm-fig-s3-13-v1.jpg`
   (2121 × 1533 px, page S3-32 rotated and cropped; `pcU`/`pcV` map chart points onto it).
 - **Validation:** the same extraction method run on Fig S3-12 (EAPS ON) reproduces the RFM worked
   example (3000 ft, 0 °C, TQ 91 % → 761.7 °C / 90.20 % against the RFM's 760 / 90.2). domtest25 holds the
@@ -240,3 +242,12 @@ should still be bumped every time.
   with the purple ExpandArrow (CHART open by default and kept as left for the session; CROSS-CHECK
   closed, opened automatically when a recorded check with cross-check figures is reopened). Screen
   only — the PDF always has the chart and any cross-check.
+- 19.11.2026 (v22) — Power check: reading exactly on a chart line fixed; ENG 2 drawn dotted on top of
+  ENG 1. (1) `interpFamily` now reads a drawn line alone when the value is exactly on it (e.g. PFD
+  1000 ft): TQ 92 at 0 ft, OAT 10 → max ITT 756 (was "outside the chart lines"). Consequence agreed with
+  Ed's rule "outside the chart = outside the airframe's parameters = no result": TQ 105 at exactly
+  -1000 ft (OAT 40) now gives 870 / 95.6, because the drawn -1000 ft line reaches TQ 108.83; -999 ft,
+  -500 ft and TQ 109 at -1000 ft still give no result (domtest25). (2) Overlay: ENG 1 red solid 1.6 with
+  r 7 rings + dots, drawn first; ENG 2 magenta round dots (dasharray 0.01 4.4, width 2.2, round caps)
+  with r 9.5 dotted rings, no dot, drawn on top. PDF: ENG 2 0.55 mm, round cap, dash [0.01, 1.15],
+  reset to solid/butt afterwards. Captions and the PDF legend updated.

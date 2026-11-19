@@ -14,7 +14,8 @@ const near = (a, b, tol) => typeof a === "number" && Math.abs(a - b) <= tol;
 
   // ── the delivered file, unaltered ──
   const sha = crypto.createHash("sha256").update(fs.readFileSync("./src/powercheck.js")).digest("hex");
-  check(`src/powercheck.js is the delivered file (sha256 ${sha.slice(0, 12)}…)`, sha === "a5cf093bed96d19be7e216633132154902bbe05d8b507f3a355061740bf616dc");
+  // Delivered a5cf093b… (9,938 bytes); fix 1 (exact-line reading in interpFamily) → f4466e8e… (10,088 bytes).
+  check(`src/powercheck.js is the delivered file + fix 1 (sha256 ${sha.slice(0, 12)}…)`, sha === "f4466e8e164783fd3153f07aefc6da73110071e3fd538622e78cd29cae018c8a" && fs.statSync("./src/powercheck.js").size === 10088);
   const jpg = fs.readFileSync("./assets/rfm-fig-s3-13-v1.jpg");
   const sof = (() => { for (let i = 2; i < jpg.length - 9; i++) if (jpg[i] === 0xff && (jpg[i + 1] === 0xc0 || jpg[i + 1] === 0xc2)) return { h: jpg.readUInt16BE(i + 5), w: jpg.readUInt16BE(i + 7) }; return null; })();
   check(`assets/rfm-fig-s3-13-v1.jpg is a 2121 x 1533 JPEG (${jpg.length} bytes)`, jpg[0] === 0xff && jpg[1] === 0xd8 && sof && sof.w === 2121 && sof.h === 1533 && jpg.length > 500000 && jpg.length < 700000);
@@ -41,10 +42,22 @@ const near = (a, b, tol) => typeof a === "number" && Math.abs(a - b) <= tol;
       !r.error && near(r.chartItt, ci, 0.01) && near(r.chartNg, cn, 0.01) && r.maxItt === mi && r.maxNg === mn);
   }
 
+  // ── fix 1: a reading exactly on a drawn line reads that line alone ──
+  const on1 = maxAllowable(91, 1000, 10), on2 = maxAllowable(92, 0, 10);
+  check(`maxAllowable(91, 1000, 10) → max ITT 761 (${on1.error || on1.maxItt})`, !on1.error && on1.maxItt === 761);
+  check(`maxAllowable(92, 0, 10) → max ITT 756 (was "TQ / PRESSURE ALT OUTSIDE CHART LINES": ${on2.error || on2.maxItt})`, !on2.error && on2.maxItt === 756);
+
+  // (105, -1000, 40) was an error case before fix 1 only because of the bug: the -1000 ft line is drawn
+  // up to TQ 108.83, so a reading exactly on it is inside the chart and gives a result.
+  const onEdge = maxAllowable(105, -1000, 40);
+  check(`maxAllowable(105, -1000, 40) → on the drawn -1000 ft line: max ITT 870 / NG 95.6 (${onEdge.error || onEdge.maxItt + " / " + onEdge.maxNg})`, !onEdge.error && onEdge.maxItt === 870 && onEdge.maxNg === 95.6);
+
   // ── never extrapolates ──
   for (const [tq, pa, oat, why] of [
     [100, 3000, 25, "TQ / pressure-altitude outside the chart lines"],
-    [105, -1000, 40, "TQ / pressure-altitude outside the chart lines"],
+    [105, -999, 40, "TQ / pressure-altitude outside the chart lines (the 0 ft line ends at TQ 104.99)"],
+    [109, -1000, 40, "beyond the end of the drawn -1000 ft line (it meets the chart top at TQ 108.83)"],
+    [105, -500, 40, "TQ / pressure-altitude outside the chart lines"],
     [70, 5000, -20, "TQ / pressure-altitude outside the chart lines"],
     [95, 16000, 10, "pressure altitude outside the chart"],
     [95, 700, 55, "OAT outside the chart"],

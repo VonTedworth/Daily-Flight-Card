@@ -218,13 +218,18 @@ const zuluNow = () => { const d = new Date(), p = (n) => String(n).padStart(2, "
   const paths = B.qa("[data-pc-path] path");
   check("chart: SVG viewBox 0 0 707 511 at 1000 px, inside a sideways-scrolling box",
     B.q("[data-pc-chart]").getAttribute("viewBox") === "0 0 707 511" && B.q("[data-pc-chart]").getAttribute("width") === "1000" && B.q("[data-pc-chartwrap]").style.overflowX === "auto");
-  check("two reading paths: ENG 1 red #e0201b solid, ENG 2 magenta #b000d0 dashed 6 4, stroke 1.6",
-    paths.length === 2 && paths[0].getAttribute("stroke") === "#e0201b" && !paths[0].getAttribute("stroke-dasharray") && paths[1].getAttribute("stroke") === "#b000d0" && paths[1].getAttribute("stroke-dasharray") === "6 4" && paths.every((p) => p.getAttribute("stroke-width") === "1.6"));
+  check("two reading paths: ENG 1 red #e0201b solid 1.6 (no dasharray); ENG 2 magenta #b000d0 dotted 2.2, dasharray 0.01 4.4, round caps",
+    paths.length === 2 && paths[0].getAttribute("stroke") === "#e0201b" && !paths[0].getAttribute("stroke-dasharray") && paths[0].getAttribute("stroke-width") === "1.6" &&
+    paths[1].getAttribute("stroke") === "#b000d0" && paths[1].getAttribute("stroke-dasharray") === "0.01 4.4" && paths[1].getAttribute("stroke-linecap") === "round" && paths[1].getAttribute("stroke-width") === "2.2");
+  const all = B.qa("[data-pc-chart] path, [data-pc-chart] circle");
+  const g1 = all.filter((x) => x.closest('[data-pc-path="0"]')), g2 = all.filter((x) => x.closest('[data-pc-path="1"]'));
+  check("ENG 2's path and rings come after ENG 1's in document order (drawn on top)", g1.length && g2.length && all.indexOf(g2[0]) > all.indexOf(g1[g1.length - 1]));
+  check("ENG 2 rings: dotted (0.01 4.4, round), radius 9.5, no centre dot", B.qa('[data-pc-path="1"] circle').length === 3 && B.qa('[data-pc-path="1"] circle').every((c) => c.getAttribute("r") === "9.5" && c.getAttribute("stroke-dasharray") === "0.01 4.4" && c.getAttribute("stroke-linecap") === "round" && c.getAttribute("fill") === "none"));
   check(`path geometry (95 %, 695 ft, 12 °C): ${paths[0] && paths[0].getAttribute("d")}`,
     paths[0] && paths[0].getAttribute("d") === "M207.09,426.02L207.09,307.05L577.96,307.05M361.71,307.05L361.71,426.02M577.96,307.05L577.96,426.02");
   check("3 rings (r 7) + 3 dots (r 1.6) per engine at xt, xi, xn", B.qa('[data-pc-path="0"] circle').length === 6 && B.qa('[data-pc-path="0"] circle[r="7"]').map((c) => c.getAttribute("cx")).join() === "207.09,361.71,577.96");
   check("image not saved (no fetch) → grey box RFM CHART IMAGE NOT SAVED ON THIS PHONE YET — OPEN ONCE WITH SIGNAL", B.tx("[data-pc-noimg]") === "RFM CHART IMAGE NOT SAVED ON THIS PHONE YET — OPEN ONCE WITH SIGNAL" && !B.q("[data-pc-img]"));
-  check("caption under the chart", B.d.getElementById("root").textContent.includes("RFM Supp 3 page S3-32 (Fig S3-13), with the readings drawn over it. ENG 1 red, ENG 2 magenta dashed. Scrolls sideways."));
+  check("caption under the chart", B.d.getElementById("root").textContent.includes("RFM Supp 3 page S3-32 (Fig S3-13), with the readings drawn over it. ENG 1 red solid; ENG 2 magenta dotted, drawn on top. Scrolls sideways."));
   check("footnote (RFM steps 11–12, rounding, never extended)", B.d.getElementById("root").textContent.includes("PAM = max − indicated. 1-minute check: both PAMs must be positive. 3-minute repeat: zero or positive is acceptable (RFM Supp 3 steps 11–12). Max ITT and NG are read from Fig S3-13 only and rounded down; the chart is never extended."));
 
   // ════════ cross-check ════════
@@ -248,12 +253,13 @@ const zuluNow = () => { const d = new Date(), p = (n) => String(n).padStart(2, "
   check("PDF state lines", b.includes("(ENG 1: WITHIN LIMITS) Tj") && b.includes("(ENG 2: WITHIN LIMITS) Tj"));
   check("PDF cross-check lines", b.includes("(CROSS-CHECK: OTHER APP \\(THIS APP - OTHER APP\\)) Tj") && b.includes("(ENG 1: MAX ITT 776 \\(DIFF -1\\)   MAX NG 91.5 \\(DIFF 0.0\\)) Tj") && b.includes("(ENG 2: MAX ITT 772 \\(DIFF +3\\)   MAX NG - \\(DIFF -\\)) Tj"));
   check("PDF: no image saved → grey box text in its place", b.includes("(RFM CHART IMAGE NOT SAVED ON THIS PHONE YET - OPEN ONCE WITH SIGNAL) Tj") && !b.includes("/DCTDecode"));
-  check("PDF legend, PIC line, footer", b.includes("(ENG 1 RED, ENG 2 MAGENTA DASHED, DRAWN OVER RFM SUPP 3 PAGE S3-32 FIG S3-13.) Tj") && b.includes("(PIC ______________________________) Tj") &&
+  check("PDF legend, PIC line, footer", b.includes("(ENG 1 RED SOLID, ENG 2 MAGENTA DOTTED ON TOP, DRAWN OVER RFM SUPP 3 PAGE S3-32 FIG S3-13.) Tj") && b.includes("(PIC ______________________________) Tj") &&
     /\(CALCULATED BY DAILY FLIGHT CARD v\d+\. PERSONAL TRIAL - THE COMPANY POWER CHECK METHOD GOVERNS\.\) Tj/.test(b) &&
     b.includes("(MAX ITT / NG READ FROM FIG S3-13 ONLY, ROUNDED DOWN. NO EXTRAPOLATION BEYOND THE CHART.) Tj") &&
     b.includes("(PAM = MAX - INDICATED. 1-MIN: PAM MUST BE POSITIVE. 3-MIN REPEAT: ZERO OR POSITIVE \\(RFM SUPP 3 STEPS 11-12\\).) Tj") && /\(GENERATED \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}Z\.\) Tj/.test(b));
   check("PDF: no degree sign or unicode minus (Courier is WinAnsi)", !b.includes("°") && !b.includes("−") && !b.includes("—"));
-  check("PDF overlay: engine colours, ENG 2 dashed then the dash reset", b.includes("0.88 0.13 0.11 RG") && b.includes("0.69 0. 0.82 RG") && /\[[0-9.]+ [0-9.]+\] 0\. d/.test(b) && b.includes("[] 0. d"));
+  check("PDF overlay: engine colours, ENG 2 dotted with round caps, then dash and cap reset", b.includes("0.88 0.13 0.11 RG") && b.includes("0.69 0. 0.82 RG") && /\[[0-9.]+ [0-9.]+\] 0\. d/.test(b) && b.includes("[] 0. d") && b.includes("1 J") && b.includes("0 J"));
+  check("PDF: ENG 1 drawn before ENG 2", b.indexOf("0.88 0.13 0.11 RG") < b.indexOf("0.69 0. 0.82 RG"));
   check("export does not record anything", B.saved().powerChecks.length === 1 && B.saved().powerChecks[0].eng[0].itt === "745" && B.saved().powerChecks[0].result.eng[1].state === "repeatPending");
 
   // ════════ standalone PDF with the RFM image (as served by the asset cache) ════════

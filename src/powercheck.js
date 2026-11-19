@@ -62,6 +62,8 @@ function yAtX(pts, x) {
   return null;
 }
 function interpFamily(fam, key, f) {
+  // Exactly on a drawn line: read that line alone (its neighbour need not reach this point).
+  for (const [k, p] of fam) if (key === k) return f(p);
   for (let i = 0; i < fam.length - 1; i++) {
     const [k0, p0] = fam[i], [k1, p1] = fam[i + 1];
     if (key >= k0 && key <= k1) {

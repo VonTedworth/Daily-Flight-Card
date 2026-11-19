@@ -87,7 +87,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v21";
+const APP_VERSION = "v22";
 // The user guide (rendered on GitHub). Opening it needs signal; the app itself does not.
 const README_URL = "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md";
 // The crew guide (33-slide PDF), saved on the phone by the service worker (own cache, kept across
@@ -2855,9 +2855,13 @@ const PC_TQ_COMPANY_MIN = 92; // advisory only — never changes the result
 // comparison threshold chosen for the trial — NOT an RFM figure — and it never changes the result.
 const PC_AGREE = { itt: 2, ng: 0.1 };
 // Fixed colours (not theme colours): they must read on the white RFM page in both themes.
+// Drawn in this order — ENG 1 first, ENG 2 on top — so where the two paths nearly coincide both
+// stay traceable: ENG 1 solid with small rings + centre dots, ENG 2 round dots with larger rings.
 const PC_ENG_STYLE = [
-  { col: "#e0201b", dash: null }, // ENG 1 red, solid
-  { col: "#b000d0", dash: [6, 4] }, // ENG 2 magenta, dashed
+  // ENG 1 red, solid
+  { col: "#e0201b", width: 1.6, dash: null, cap: null, ring: 7, dot: true, pdfWidth: 0.4, pdfDash: null },
+  // ENG 2 magenta, dotted (a near-zero dash with round caps draws round dots), on top
+  { col: "#b000d0", width: 2.2, dash: "0.01 4.4", cap: "round", ring: 9.5, dot: false, pdfWidth: 0.55, pdfDash: [0.01, 1.15] },
 ];
 
 const pad2 = (n) => String(n).padStart(2, "0");
@@ -3174,23 +3178,27 @@ function makePowerCheckPdf(entry, jpeg, now = new Date()) {
   R.eng.forEach((E, i) => {
     const r = E.final;
     if (!r || r.error) return;
-    const { col, dash } = PC_ENG_STYLE[i];
+    const { col, pdfWidth, pdfDash, ring } = PC_ENG_STYLE[i]; // ENG 1 first, ENG 2 on top
     const rgb = [1, 3, 5].map((j) => parseInt(col.slice(j, j + 2), 16));
     doc.setDrawColor(...rgb);
-    doc.setLineWidth(0.4);
-    if (dash) doc.setLineDashPattern(dash.map((d) => d * k), 0);
+    doc.setLineWidth(pdfWidth);
+    if (pdfDash) {
+      doc.setLineCap("round");
+      doc.setLineDashPattern(pdfDash, 0); // lines and rings dotted
+    }
     const { xt, y: yy, xi, xn, yb } = pcPath(r);
     doc.line(...P(xt, yb), ...P(xt, yy));
     doc.line(...P(xt, yy), ...P(xn, yy));
     doc.line(...P(xi, yy), ...P(xi, yb));
     doc.line(...P(xn, yy), ...P(xn, yb));
-    doc.setLineDashPattern([], 0);
-    for (const cx of [xt, xi, xn]) doc.circle(...P(cx, yy), 7 * k, "S");
+    for (const cx of [xt, xi, xn]) doc.circle(...P(cx, yy), ring * k, "S");
+    doc.setLineDashPattern([], 0); // nothing else on the page is affected
+    doc.setLineCap("butt");
   });
   y = oy + chh + 6;
   doc.setFontSize(7.5);
   doc.setTextColor(90, 90, 90);
-  t("ENG 1 RED, ENG 2 MAGENTA DASHED, DRAWN OVER RFM SUPP 3 PAGE S3-32 FIG S3-13.", M, y);
+  t("ENG 1 RED SOLID, ENG 2 MAGENTA DOTTED ON TOP, DRAWN OVER RFM SUPP 3 PAGE S3-32 FIG S3-13.", M, y);
   y += 8;
   doc.setTextColor(20, 20, 20);
   doc.setFontSize(9.5);
@@ -3599,22 +3607,20 @@ function PowerCheck({ active, ctx, cardInfo, onRecord, onCancel }) {
               {R.eng.map((E, i) => {
                 const r = E.final;
                 if (!r || r.error) return null;
-                const { col, dash } = PC_ENG_STYLE[i];
+                const { col, width, dash, cap, ring, dot } = PC_ENG_STYLE[i]; // ENG 1 first, ENG 2 on top
                 const p = pcPath(r);
+                const line = { fill: "none", stroke: col, strokeWidth: width, strokeDasharray: dash || undefined, strokeLinecap: cap || undefined };
                 const f = (v) => +v.toFixed(2);
                 return (
                   <g key={i} data-pc-path={i}>
                     <path
                       d={`M${f(p.xt)},${f(p.yb)}L${f(p.xt)},${f(p.y)}L${f(p.xn)},${f(p.y)}M${f(p.xi)},${f(p.y)}L${f(p.xi)},${f(p.yb)}M${f(p.xn)},${f(p.y)}L${f(p.xn)},${f(p.yb)}`}
-                      fill="none"
-                      stroke={col}
-                      strokeWidth="1.6"
-                      strokeDasharray={dash ? dash.join(" ") : undefined}
+                      {...line}
                     />
                     {[p.xt, p.xi, p.xn].map((cx, k) => (
                       <g key={k}>
-                        <circle cx={f(cx)} cy={f(p.y)} r="7" fill="none" stroke={col} strokeWidth="1.6" />
-                        <circle cx={f(cx)} cy={f(p.y)} r="1.6" fill={col} />
+                        <circle cx={f(cx)} cy={f(p.y)} r={ring} {...line} />
+                        {dot && <circle cx={f(cx)} cy={f(p.y)} r="1.6" fill={col} />}
                       </g>
                     ))}
                   </g>
@@ -3623,7 +3629,7 @@ function PowerCheck({ active, ctx, cardInfo, onRecord, onCancel }) {
             </svg>
           </div>
           <div style={{ color: C.grey, fontFamily: mono, fontSize: 10, lineHeight: 1.5, letterSpacing: "0.04em", marginTop: 6 }}>
-            RFM Supp 3 page S3-32 (Fig S3-13), with the readings drawn over it. ENG 1 red, ENG 2 magenta dashed. Scrolls sideways.
+            RFM Supp 3 page S3-32 (Fig S3-13), with the readings drawn over it. ENG 1 red solid; ENG 2 magenta dotted, drawn on top. Scrolls sideways.
           </div>
         </>
       )}
