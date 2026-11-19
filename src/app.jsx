@@ -87,7 +87,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v22";
+const APP_VERSION = "v23";
 // The user guide (rendered on GitHub). Opening it needs signal; the app itself does not.
 const README_URL = "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md";
 // The crew guide (33-slide PDF), saved on the phone by the service worker (own cache, kept across
@@ -3238,27 +3238,34 @@ async function shareDocPdf(doc, name) {
   }
 }
 
-function PowerCheck({ active, ctx, cardInfo, onRecord, onCancel }) {
+// `keep` is owned by App: the check in progress lives there, so the DAY/NIGHT toggle (which remounts
+// every tab to re-read the palette) never clears figures that haven't been recorded yet.
+function PowerCheck({ active, ctx, cardInfo, onRecord, onCancel, keep }) {
   const infoRef = useRef(cardInfo);
   infoRef.current = cardInfo;
-  const [st, setSt] = useState(() => pcBlank(cardInfo));
+  const [st, setSt] = useState(() => keep.st || pcBlank(cardInfo));
   const [img, setImg] = useState("unknown"); // "ok" | "missing" | "unknown" (not tried yet)
   const [exporting, setExporting] = useState(false);
-  const [chartOpen, setChartOpen] = useState(true); // CHART drop-down, open by default
-  const [xOpen, setXOpen] = useState(false); // CROSS-CHECK drop-down, closed by default (optional)
-  // A/C REG and SRP follow the A/C DATA page until typed in here (or if left empty).
-  const follow = useRef({ acReg: true, srp: true });
+  const [chartOpen, setChartOpen] = useState(keep.chartOpen); // CHART drop-down, open by default
+  const [xOpen, setXOpen] = useState(keep.xOpen); // CROSS-CHECK drop-down, closed by default (optional)
+  // A/C REG and SRP follow the A/C DATA page until typed in here (or if left empty): keep.follow.
+  useEffect(() => {
+    keep.st = st;
+    keep.chartOpen = chartOpen;
+    keep.xOpen = xOpen;
+  }, [st, chartOpen, xOpen]);
   const row = ctx ? ctx.row : null;
 
   // A new context (ground run YES, A/C DATA button, a tapped entry, or the tab bar with none):
   // load that row's v2 entry for editing, or start a fresh check timed now (UTC).
   // Legacy entries are never loaded — a fresh check replaces them on RECORD.
   useEffect(() => {
-    if (!ctx) return;
+    if (!ctx || keep.seq === ctx.seq) return; // already set up (e.g. remounted by the theme toggle)
+    keep.seq = ctx.seq;
     const info = infoRef.current || {};
     const ex = (info.powerChecks || []).find((p) => p && p.v === 2 && p.row === ctx.row);
     setSt(ex ? pcFromEntry(ex) : pcBlank(info));
-    follow.current = ex ? { acReg: !ex.acReg, srp: !ex.srp } : { acReg: true, srp: true };
+    keep.follow = ex ? { acReg: !ex.acReg, srp: !ex.srp } : { acReg: true, srp: true };
     // a recorded check with cross-check figures opens that drop-down; otherwise it starts closed
     setXOpen(Boolean(ex && (ex.eng || []).some((e) => e && (String(e.xItt || "") !== "" || String(e.xNg || "") !== ""))));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3278,8 +3285,8 @@ function PowerCheck({ active, ctx, cardInfo, onRecord, onCancel }) {
   useEffect(() => {
     const info = cardInfo || {};
     const patch = {};
-    if (follow.current.acReg) patch.acReg = (info.acReg || "").trim().toUpperCase();
-    if (follow.current.srp) patch.srp = info.srp || "";
+    if (keep.follow.acReg) patch.acReg = (info.acReg || "").trim().toUpperCase();
+    if (keep.follow.srp) patch.srp = info.srp || "";
     if (Object.keys(patch).length) setSt((s) => ({ ...s, ...patch }));
   }, [cardInfo && cardInfo.acReg, cardInfo && cardInfo.srp]);
 
@@ -3535,8 +3542,8 @@ function PowerCheck({ active, ctx, cardInfo, onRecord, onCancel }) {
           </div>
           {/* SRP numbers run to 7 digits; SITE is a 4-letter ICAO code. */}
           {grid("minmax(0,1fr) minmax(0,1.15fr) minmax(0,0.75fr)", [
-            fld("acReg", "A/C REG", st.acReg, (v) => { follow.current.acReg = v === ""; set({ acReg: v }); }, "text"),
-            fld("srp", "SRP", st.srp, (v) => { follow.current.srp = v === ""; set({ srp: v }); }, "int"),
+            fld("acReg", "A/C REG", st.acReg, (v) => { keep.follow.acReg = v === ""; set({ acReg: v }); }, "text"),
+            fld("srp", "SRP", st.srp, (v) => { keep.follow.srp = v === ""; set({ srp: v }); }, "int"),
             fld("site", "SITE", st.site, (v) => set({ site: v }), "text"),
           ])}
           {grid(
@@ -3705,6 +3712,8 @@ function App() {
   // start a fresh load (or reload of that row's v2 entry) even for the same row.
   const [pwrCtx, setPwrCtx] = useState(null);
   const pwrSeq = useRef(0);
+  // The PWR CHK check in progress, kept here so the DAY/NIGHT toggle (which remounts the tabs) keeps it.
+  const pwrKeep = useRef({ seq: null, st: null, follow: { acReg: true, srp: true }, chartOpen: true, xOpen: false });
   const [pendingPowerCheck, setPendingPowerCheck] = useState(null);
   const [cardInfo, setCardInfo] = useState({ acReg: "", srp: "", powerChecks: [] });
 
@@ -3872,6 +3881,7 @@ function App() {
               cardInfo={cardInfo}
               onRecord={handlePowerCheckRecord}
               onCancel={handlePowerCheckCancel}
+              keep={pwrKeep.current}
             />
           </div>
           <div style={{ display: tab === "ifr" ? "block" : "none" }}>

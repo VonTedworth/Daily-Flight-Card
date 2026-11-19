@@ -251,3 +251,7 @@ should still be bumped every time.
   r 7 rings + dots, drawn first; ENG 2 magenta round dots (dasharray 0.01 4.4, width 2.2, round caps)
   with r 9.5 dotted rings, no dot, drawn on top. PDF: ENG 2 0.55 mm, round cap, dash [0.01, 1.15],
   reset to solid/butt afterwards. Captions and the PDF legend updated.
+- 19.11.2026 (v23) — Bug fix (Ed): switching DAY/NIGHT cleared an unrecorded power check. The theme
+  toggle remounts every tab (key={theme}); PWR CHK's check in progress now lives in App (`pwrKeep`:
+  figures, context seq, REG/SRP follow flags, drop-down state), so the toggle keeps it. Rule for any
+  future tab: state that must survive the theme toggle belongs in App or storage, not in the tab.

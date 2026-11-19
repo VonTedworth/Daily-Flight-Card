@@ -348,7 +348,27 @@ const zuluNow = () => { const d = new Date(), p = (n) => String(n).padStart(2, "
   const mb = (await M.shared()).bytes;
   check("PDF with CHART and CROSS-CHECK minimised still has the chart overlay and the cross-check", mb.includes("CROSS-CHECK: OTHER APP") && mb.includes("0.88 0.13 0.11 RG") && mb.includes("(PIC ______________________________) Tj"));
 
-  check("no script errors in any run", [A, B, G, H, L, M].every((X) => X.errors.length === 0));
+  // ════════ v23: DAY/NIGHT toggle keeps a check that hasn't been recorded ════════
+  const T = open(card());
+  await sleep(2500);
+  T.click(T.btn("A/C DATA")); await sleep(100);
+  T.click(T.btn("POWER CHECK")); await sleep(200);
+  await T.fill({ oat: "12", qnh: "996", e0itt: "745", e0ng: "89.7", e1itt: "775", e1ng: "89.7", srp: "5555" });
+  T.click(T.q('[data-pc-addrep="1"]')); await sleep(80);
+  await T.fill({ e1ritt: "774", e1rng: "89.8", x0itt: "776" });
+  T.click(T.q('[data-pc-fold-toggle="chart"]')); await sleep(60);
+  const snap = () => ["oat", "qnh", "e0itt", "e0ng", "e1itt", "e1ng", "e1ritt", "e1rng", "x0itt", "srp", "acReg"].map((k) => (T.pc(k) ? T.pc(k).value : "∅")).join(",");
+  const snap0 = snap();
+  for (const mode of ["day", "night"]) {
+    T.click(T.q('[aria-label="toggle day/night mode"]')); await sleep(300);
+    check(`switch to ${mode}: still on PWR CHK FOR: THIS SRP with every figure kept (${snap()})`, T.onPwr() && T.tx("[data-pc-for]") === "FOR: THIS SRP" && snap() === snap0 && T.w.localStorage.getItem("theme") === mode);
+    check(`…3-min repeat open, chart still minimised, summary unchanged (${mode})`, !!T.q('[data-pc-repblock="1"]') && !T.q('[data-pc-fold="chart"]').open && T.tx('[data-pc-state="1"]') === "WITHIN LIMITS ON 3-MIN REPEAT");
+  }
+  check("a typed-over SRP is still kept after the toggle (not overwritten from A/C DATA)", T.pc("srp").value === "5555");
+  T.click(T.q("[data-pc-record]")); await sleep(800);
+  check("…and RECORD after the toggle saves those figures", T.saved().powerChecks[0].eng[1].rep.itt === "774" && T.saved().powerChecks[0].srp === "5555" && T.onAc());
+
+  check("no script errors in any run", [A, B, G, H, L, M, T].every((X) => X.errors.length === 0));
 
   let fail = 0;
   for (const [n, ok] of res) { console.log((ok ? "PASS" : "FAIL") + "  " + n); if (!ok) fail++; }
