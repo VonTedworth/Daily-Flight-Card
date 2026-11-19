@@ -17,6 +17,7 @@ import {
   project,
   placeLabels,
 } from "./fuelcalc.js";
+import { explainSector } from "./ifr-explain.mjs";
 
 // ═══════════════════════════════════════════════════════════
 // Fuel Uplift + Daily Flight Card — v10
@@ -60,6 +61,7 @@ const NIGHT = {
   grey: "#8fa3b3",
   amber: "#ffb347",
   white: "#e8eef2",
+  purple: "#B57CFF", // reserved for "tap to expand" (ExpandArrow) — use for nothing else
 };
 const DAY = {
   bg: "#d9dde2",
@@ -72,6 +74,7 @@ const DAY = {
   grey: "#4a545e",
   amber: "#9a4a00",
   white: "#10151b",
+  purple: "#6A2FC0", // darker so it holds contrast on the white day panel
 };
 const C = { ...NIGHT };
 
@@ -80,7 +83,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v16";
+const APP_VERSION = "v17";
 // The user guide (rendered on GitHub). Opening it needs signal; the app itself does not.
 const README_URL = "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md";
 const BUILD_DATE = typeof window !== "undefined" && window.__BUILD_DATE__ ? window.__BUILD_DATE__ : "";
@@ -2077,6 +2080,33 @@ async function shareTripPdf(r) {
 }
 
 const siteName = (st) => `${st.icao || st.short} ${st.name.toUpperCase()}`;
+
+// The one "tap to expand" marker: a purple boxed chevron, down when closed, up when open.
+// Purple is reserved for this. The parent control carries aria-expanded / open.
+function ExpandArrow({ open, size = 24 }) {
+  return (
+    <span
+      aria-hidden="true"
+      data-arrow={open ? "open" : "closed"}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flex: "none",
+        width: size,
+        height: size,
+        boxSizing: "border-box",
+        border: `1.5px solid ${C.purple}`,
+        borderRadius: 6,
+        background: `${C.purple}24`, // ≈ 14% opacity
+      }}
+    >
+      <svg className="exp-chev" width="14" height="14" viewBox="0 0 24 24" style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
+        <path d="M6 9l6 6 6-6" fill="none" stroke={C.purple} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </span>
+  );
+}
 function siteCaption(st) {
   const kind = { airfield_ifr: "IFR airfield", pins_site: "PinS site", refuel_vfr: "VFR refuel point", hospital: "hospital (map only)" }[st.type] || st.type;
   const fuel = st.type === "hospital" ? "" : st.fuel ? " · fuel" : " · no fuel";
@@ -2194,6 +2224,7 @@ function IfrMap({ result, note, onTap }) {
 function IfrFuel() {
   const [trip, setTripState] = useState(loadTrip);
   const [open, setOpen] = useState([]);
+  const [workOpen, setWorkOpen] = useState([]); // FUEL WORKINGS per sector, closed by default
   const [mapNote, setMapNote] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -2242,6 +2273,7 @@ function IfrFuel() {
       t.alt2 = Array(m).fill(null);
     });
     setOpen([]);
+    setWorkOpen([]);
   };
   const addSector = () =>
     update((t) => {
@@ -2255,6 +2287,7 @@ function IfrFuel() {
   const resetTrip = () => {
     update((t) => Object.assign(t, freshTrip()));
     setOpen([]);
+    setWorkOpen([]);
     setConfirmReset(false);
     setMapNote("");
   };
@@ -2441,9 +2474,9 @@ function IfrFuel() {
           <span>
             → {s.to.id} · {Math.round(s.dist)} nm · <span style={{ color: C.cyan, fontWeight: 700 }}>{s.sc}</span> · {altTxt}
           </span>
-          <span style={{ whiteSpace: "nowrap" }}>
+          <span style={{ whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 8, marginLeft: 8 }}>
             <b style={{ color: C.white }}>{s.burn} KG</b>
-            <span style={{ marginLeft: 8 }}>{isOpen ? "▴" : "▾"}</span>
+            <ExpandArrow open={isOpen} />
           </span>
         </button>
         {isOpen && (
@@ -2506,6 +2539,42 @@ function IfrFuel() {
                 ))}
               </>
             )}
+            {(() => {
+              const ex = explainSector(s, {
+                fromName: siteName(s.from),
+                toName: siteName(s.to),
+                nextGate: r.sec[i + 1] ? r.sec[i + 1].gate : null,
+                addMin: FUEL_DATA.oma_rules.scenarios[s.sc].trip_add_min || 0,
+              });
+              return (
+                <div data-explain={i} style={{ fontFamily: mono, fontSize: 9.5, color: C.white, lineHeight: 1.5, margin: "8px 0 4px", borderLeft: `2px solid ${C.edge}`, paddingLeft: 8 }}>
+                  {ex.text || (
+                    <>
+                      {ex.pre}
+                      <b>{ex.total}</b>
+                      {ex.after}
+                    </>
+                  )}
+                </div>
+              );
+            })()}
+            <details
+              data-workings={i}
+              open={!!workOpen[i]}
+              onToggle={(e) => {
+                const o = e.currentTarget.open;
+                setWorkOpen((w) => (!!w[i] === o ? w : Object.assign([...w], { [i]: o })));
+              }}
+              style={{ marginTop: 8 }}
+            >
+              <summary
+                data-workings-toggle={i}
+                className="ifr-sum"
+                style={{ listStyle: "none", display: "flex", alignItems: "center", gap: 8, cursor: "pointer", padding: "2px 0 6px", borderBottom: `1px solid ${C.edge}` }}
+              >
+                <ExpandArrow open={!!workOpen[i]} size={22} />
+                <span style={{ fontFamily: mono, fontSize: 8, letterSpacing: "0.13em", color: C.grey }}>FUEL WORKINGS</span>
+              </summary>
             <div style={{ marginTop: 6 }}>
               <div style={{ ...cols, borderBottom: `1px solid ${C.edge}` }}>
                 {[`MIN TO LIFT ${s.from.id}`, "REQUIREMENT", "L", "KG"].map((h, j) => (
@@ -2561,6 +2630,7 @@ function IfrFuel() {
                 </>
               )}
             </div>
+            </details>
           </div>
         )}
       </div>
@@ -2569,7 +2639,9 @@ function IfrFuel() {
 
   return (
     <>
-      <style>{`.ifr-actual::placeholder { color: ${C.grey}; opacity: 0.55; font-weight: 500; text-transform: none; }`}</style>
+      <style>{`.ifr-actual::placeholder { color: ${C.grey}; opacity: 0.55; font-weight: 500; text-transform: none; }
+.ifr-sum { list-style: none; } .ifr-sum::-webkit-details-marker { display: none; } .ifr-sum::marker { content: ""; }
+@media (prefers-reduced-motion: reduce) { .exp-chev { transition: none !important; } }`}</style>
       <PanelHeader title="IFR FUEL" subtitle="AW169 · OMB34" />
       <IfrMap result={r} note={mapNote} onTap={tapMap} />
 

@@ -98,6 +98,11 @@ should still be bumped every time.
 - Every feature must be faster than pen and paper; when in doubt, remove.
 - The app must launch with no signal after one online visit (service worker), and an
   update must never reload or interrupt an open session.
+- Purple (`C.purple`, NIGHT #B57CFF / DAY #6A2FC0) means "tap to expand" and is used only by
+  `ExpandArrow` (domtest23 fails if it appears anywhere else). In IFR FUEL every expandable thing
+  uses it; the sector FUEL WORKINGS are a `<details>` (closed by default, state `workOpen`, reset
+  wherever `open` is reset). Collapsing is screen-only: the PDF always prints every sector's
+  full workings, and the table stays in the DOM.
 - The IFR FUEL tab is an unregulated cross-check: the "Planning cross-check only —
   not a certified flight-planning tool" disclaimer must stay visible. It is fully
   offline — **no network request of any kind** (domtest16/17 fail if one is made). It
@@ -147,3 +152,8 @@ should still be bumped every time.
   negative). Ed: "all the working is shown … so someone else doesn't go 'where has that figure gone?'"
   Previously, when the onward chain governed, the own working (incl. final reserve) was replaced by
   a single Onward line. Display only — no minimum changed. Do not hide working again.
+- Nov 2026 (v17) — IFR FUEL presentation: purple boxed arrows replace the ▾/▴ characters (Ed
+  couldn't tell the sector lines were tappable); an opened sector shows one plain-English sentence
+  (src/ifr-explain.mjs, reads engine figures only) and the full table moves behind a FUEL WORKINGS
+  toggle, closed by default. For profile A the sentence also says "(incl. 15 min added to trip)",
+  because A's figure includes it. No calculation, data, PDF or storage change.
