@@ -289,3 +289,6 @@ should still be bumped every time.
   so it shares the card and its save. Card PDF: DUTIES DONE between POWER CHECKS and MISC, only when the
   card has a `duties` field; the HANDOVER line in amber. domtest27 (new) covers data, layout, storage,
   behaviour and the PDF; tools/check_offline_chrome.js checks the two-row bar at 375 px.
+- 19.11.2026 (v25) — PWR CHK, at Ed's request: the CHART drop-down starts closed (`pwrKeep.chartOpen`
+  false); open it with its arrow, and it stays as left for the session. Screen only — the power check
+  PDF always includes the chart.

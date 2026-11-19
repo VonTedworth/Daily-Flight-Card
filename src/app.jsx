@@ -88,7 +88,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v24";
+const APP_VERSION = "v25";
 // The user guide (rendered on GitHub). Opening it needs signal; the app itself does not.
 const README_URL = "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md";
 // The crew guide (33-slide PDF), saved on the phone by the service worker (own cache, kept across
@@ -3556,7 +3556,7 @@ function PowerCheck({ active, ctx, cardInfo, onRecord, onCancel, keep }) {
   const [st, setSt] = useState(() => keep.st || pcBlank(cardInfo));
   const [img, setImg] = useState("unknown"); // "ok" | "missing" | "unknown" (not tried yet)
   const [exporting, setExporting] = useState(false);
-  const [chartOpen, setChartOpen] = useState(keep.chartOpen); // CHART drop-down, open by default
+  const [chartOpen, setChartOpen] = useState(keep.chartOpen); // CHART drop-down, closed until opened (v25)
   const [xOpen, setXOpen] = useState(keep.xOpen); // CROSS-CHECK drop-down, closed by default (optional)
   // A/C REG and SRP follow the A/C DATA page until typed in here (or if left empty): keep.follow.
   useEffect(() => {
@@ -4023,7 +4023,7 @@ function App() {
   const [pwrCtx, setPwrCtx] = useState(null);
   const pwrSeq = useRef(0);
   // The PWR CHK check in progress, kept here so the DAY/NIGHT toggle (which remounts the tabs) keeps it.
-  const pwrKeep = useRef({ seq: null, st: null, follow: { acReg: true, srp: true }, chartOpen: true, xOpen: false });
+  const pwrKeep = useRef({ seq: null, st: null, follow: { acReg: true, srp: true }, chartOpen: false, xOpen: false });
   const [pendingPowerCheck, setPendingPowerCheck] = useState(null);
   const [cardInfo, setCardInfo] = useState({ acReg: "", srp: "", powerChecks: [] });
 

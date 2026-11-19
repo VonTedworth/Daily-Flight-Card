@@ -332,11 +332,13 @@ const zuluNow = () => { const d = new Date(), p = (n) => String(n).padStart(2, "
   check("once typed in on PWR CHK, the SRP stays as typed (REG still follows)", M.pc("srp").value === "3007576" && M.pc("acReg").value === "G-KSSC");
   // drop-downs
   const fold = (n) => M.q(`[data-pc-fold="${n}"]`);
-  check("CHART is a drop-down with the purple arrow, open by default", fold("chart") && fold("chart").tagName === "DETAILS" && fold("chart").open && M.q('[data-pc-fold-toggle="chart"] [data-arrow]').dataset.arrow === "open" && fold("chart").contains(M.q("[data-pc-chart]")));
+  check("CHART is a drop-down with the purple arrow, closed until opened (v25)", fold("chart") && fold("chart").tagName === "DETAILS" && !fold("chart").open && M.q('[data-pc-fold-toggle="chart"] [data-arrow]').dataset.arrow === "closed" && fold("chart").contains(M.q("[data-pc-chart]")));
   check("CROSS-CHECK is a drop-down with the purple arrow, closed by default", fold("xcheck") && !fold("xcheck").open && M.q('[data-pc-fold-toggle="xcheck"] [data-arrow]').dataset.arrow === "closed" && fold("xcheck").contains(M.pc("x0itt")));
   check("arrows are the shared purple ExpandArrow (22 px)", /181, 124, 255|#b57cff/i.test(M.q('[data-pc-fold-toggle="chart"] [data-arrow]').style.border) && M.q('[data-pc-fold-toggle="chart"] [data-arrow]').style.width === "22px");
   M.click(M.q('[data-pc-fold-toggle="chart"]')); await sleep(80);
-  check("tap CHART → minimised (arrow closed), chart still in the page", !fold("chart").open && M.q('[data-pc-fold-toggle="chart"] [data-arrow]').dataset.arrow === "closed" && !!M.q("[data-pc-chart]"));
+  check("tap CHART → opens (arrow open), the RFM chart shown", fold("chart").open && M.q('[data-pc-fold-toggle="chart"] [data-arrow]').dataset.arrow === "open" && !!M.q("[data-pc-chart]"));
+  M.click(M.q('[data-pc-fold-toggle="chart"]')); await sleep(80);
+  check("tap CHART again → minimised (arrow closed), chart still in the page", !fold("chart").open && M.q('[data-pc-fold-toggle="chart"] [data-arrow]').dataset.arrow === "closed" && !!M.q("[data-pc-chart]"));
   M.click(M.q('[data-pc-fold-toggle="xcheck"]')); await sleep(80);
   check("tap CROSS-CHECK → opens", fold("xcheck").open && M.q('[data-pc-fold-toggle="xcheck"] [data-arrow]').dataset.arrow === "open");
   await M.fill({ oat: "12", qnh: "996", e0itt: "745", e0ng: "89.7", e1itt: "750", e1ng: "89.9", x0itt: "776" });
@@ -357,13 +359,14 @@ const zuluNow = () => { const d = new Date(), p = (n) => String(n).padStart(2, "
   await T.fill({ oat: "12", qnh: "996", e0itt: "745", e0ng: "89.7", e1itt: "775", e1ng: "89.7", srp: "5555" });
   T.click(T.q('[data-pc-addrep="1"]')); await sleep(80);
   await T.fill({ e1ritt: "774", e1rng: "89.8", x0itt: "776" });
+  check("v25: a fresh session's PWR CHK has the CHART closed", !T.q('[data-pc-fold="chart"]').open);
   T.click(T.q('[data-pc-fold-toggle="chart"]')); await sleep(60);
   const snap = () => ["oat", "qnh", "e0itt", "e0ng", "e1itt", "e1ng", "e1ritt", "e1rng", "x0itt", "srp", "acReg"].map((k) => (T.pc(k) ? T.pc(k).value : "∅")).join(",");
   const snap0 = snap();
   for (const mode of ["day", "night"]) {
     T.click(T.q('[aria-label="toggle day/night mode"]')); await sleep(300);
     check(`switch to ${mode}: still on PWR CHK FOR: THIS SRP with every figure kept (${snap()})`, T.onPwr() && T.tx("[data-pc-for]") === "FOR: THIS SRP" && snap() === snap0 && T.w.localStorage.getItem("theme") === mode);
-    check(`…3-min repeat open, chart still minimised, summary unchanged (${mode})`, !!T.q('[data-pc-repblock="1"]') && !T.q('[data-pc-fold="chart"]').open && T.tx('[data-pc-state="1"]') === "WITHIN LIMITS ON 3-MIN REPEAT");
+    check(`…3-min repeat open, chart still open as left, summary unchanged (${mode})`, !!T.q('[data-pc-repblock="1"]') && T.q('[data-pc-fold="chart"]').open && T.tx('[data-pc-state="1"]') === "WITHIN LIMITS ON 3-MIN REPEAT");
   }
   check("a typed-over SRP is still kept after the toggle (not overwritten from A/C DATA)", T.pc("srp").value === "5555");
   T.click(T.q("[data-pc-record]")); await sleep(800);
