@@ -52,9 +52,10 @@ const zuluNow = () => { const d = new Date(), p = (n) => String(n).padStart(2, "
   await sleep(2500);
   const bar = A.q("[data-tabbar]");
   const labels = [...bar.children].map((b) => b.textContent.trim());
-  check(`tab order: ${labels.slice(0, 5).join(" · ")} then the theme toggle`, labels.slice(0, 5).join("|") === "A/C DATA|FLIGHTS|UPLIFT|PWR CHK|IFR FUEL" && bar.children[5].getAttribute("aria-label") === "toggle day/night mode");
+  // v24: two rows of three plus DUTIES (layout itself: domtest27); the toggle is last in the DOM.
+  check(`tab order: ${labels.slice(0, 6).join(" · ")} then the theme toggle`, labels.slice(0, 6).join("|") === "A/C DATA|FLIGHTS|UPLIFT|DUTIES|PWR CHK|IFR FUEL" && bar.children[6].getAttribute("aria-label") === "toggle day/night mode");
   const tb = bar.children[0].style;
-  check("tabs: flex 1 1 auto, padding 12px 4px, one line (nowrap); gap 6; toggle 36 px", tb.flex === "1 1 auto" && tb.padding === "12px 4px" && tb.whiteSpace === "nowrap" && bar.style.gap === "6px" && bar.children[5].style.width === "36px");
+  check("tabs: padding 12px 4px, one line (nowrap); gap 6", tb.padding === "12px 4px" && tb.whiteSpace === "nowrap" && bar.style.gap === "6px");
   check("tab text 10.5 px (11 px measured too wide at 375 px)", tb.fontSize === "10.5px");
 
   // ════════ UPLIFT is fuel only ════════

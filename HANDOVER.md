@@ -33,6 +33,7 @@ crew relies on.
   generates `manifest.json` (same icon as the apple-touch-icon).
 - `src/powercheck.js` + `assets/rfm-fig-s3-13-v1.jpg` — the PWR CHK calculator and the RFM page image
   (see "Power check" below). Delivered files: never edit, re-encode or regenerate them.
+- `src/duties.js` — the DUTIES tab's lists (data only; see "Base duties" below).
 - `test-fixtures/` — the v19 card PDF for a card with pre-v20 power checks (domtest26 proves
   legacy entries still print byte-for-byte the same).
 - `build/` — esbuild output (generated)
@@ -168,6 +169,31 @@ should still be bumped every time.
   domtest20/21/25/26 and tools/check_offline_chrome.js, then rebuild. The old asset cache is deleted
   by the activate filter.
 
+## Base duties (DUTIES tab, v24)
+- **Data:** `src/duties.js` (`DUTIES`: `daily`, `night`, `days` keyed by `getDay()` 0 = Sunday … 6 = Saturday,
+  `optional`, `winter`). Edit the lists there; `DutiesPage` in app.jsx only renders them, section by section.
+  Item shapes: `{id, t}`, `{id, t, auto: "pc"}`, `{id, t, handover: true}`, `{id, t, sub: [items]}`.
+- **Stable ids:** ticks are stored on the card as `card.duties = {id: true}` (only ticked leaves; a parent's
+  own id is never stored — its tick is "all its sub-items ticked"). NEVER rename or reuse an id: old cards
+  would show the wrong ticks. A changed wording keeps its id; a new duty gets a new id; a removed duty's id
+  is retired, never given to something else. domtest27 checks every id is unique.
+- **Adding a duty:** add `{id: "new-id", t: "Text"}` to the list (sub-items: `sub: [...]` with their own ids).
+  A weekday duty goes in `days[n]`. **A new optional group** (like Fuel check cabinet): one item with `sub`.
+  **A new section** (beyond daily / night / days / optional / winter) needs one `dropSection(...)` line in
+  `DutiesPage` and one line in `dutiesPdfLines` — the rest is data.
+- **Auto power check:** the `auto: "pc"` item counts as done when `card.powerChecks.length > 0` (any shape,
+  legacy included) or when ticked by hand; the auto tick is never stored.
+- **Handover line:** under the `handover` item, while the compressor wash (`cw`) or the power check is not
+  done: `HAND OVER: COMPRESSOR WASH / POWER CHECK / COMPRESSOR WASH + POWER CHECK NOT DONE`. The card PDF
+  prints `HANDOVER: … NOT DONE` (amber) on the same condition.
+- **Storage rules:** `freshCard()` has `duties: {}`; a card loaded from storage is never given a `duties`
+  field — no field = pre-v24 card: no ticks on screen, no DUTIES section in its PDF (byte-for-byte as
+  before, domtest26). The first tick on such a card creates the field. Carry-over copies no ticks.
+  `cardUsed` counts ticks. Drop-down open/closed is screen state in FlightCard (`dutyOpen`), never saved.
+- **Weekday:** from the card date (`parseCardDate`, UTC noon → `getUTCDay`); today's if the date can't be read.
+- **Later (not built):** show only the card date's duties once the lists are final — the page renders per
+  section so a filter can be added without restructuring.
+
 ## Decisions log
 - July 2026 — WX/METAR tab investigated and rejected: aviationweather.gov
   blocks browser CORS; the workaround (GitHub Actions data pipeline) adds
@@ -255,3 +281,11 @@ should still be bumped every time.
   toggle remounts every tab (key={theme}); PWR CHK's check in progress now lives in App (`pwrKeep`:
   figures, context seq, REG/SRP follow flags, drop-down state), so the toggle keeps it. Rule for any
   future tab: state that must survive the theme toggle belongs in App or storage, not in the tab.
+- 19.11.2026 (v24) — DUTIES tab: daily / end-of-shift, night, weekday, optional and winter checklists;
+  ticks saved on the card and printed on the card PDF. Tab bar now two rows: A/C DATA · FLIGHTS ·
+  UPLIFT / DUTIES · PWR CHK · IFR FUEL (row 2 order at Ed's request). Grid `1fr 1fr 1fr 40px`,
+  gap 6, the theme toggle in column 4 spanning both rows; tab text unchanged (10.5 px / 0.03em). Lists in
+  `src/duties.js` (stable ids — see "Base duties"); the page renders inside FlightCard (`page="duties"`)
+  so it shares the card and its save. Card PDF: DUTIES DONE between POWER CHECKS and MISC, only when the
+  card has a `duties` field; the HANDOVER line in amber. domtest27 (new) covers data, layout, storage,
+  behaviour and the PDF; tools/check_offline_chrome.js checks the two-row bar at 375 px.

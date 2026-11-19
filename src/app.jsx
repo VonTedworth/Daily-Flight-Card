@@ -19,6 +19,7 @@ import {
 } from "./fuelcalc.js";
 import { explainSector } from "./ifr-explain.mjs";
 import { pressureAltitude, assess, pcPath, PC_IMAGE } from "./powercheck.js";
+import { DUTIES } from "./duties.js";
 
 // ═══════════════════════════════════════════════════════════
 // Fuel Uplift + Daily Flight Card — v10
@@ -87,7 +88,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v23";
+const APP_VERSION = "v24";
 // The user guide (rendered on GitHub). Opening it needs signal; the app itself does not.
 const README_URL = "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md";
 // The crew guide (33-slide PDF), saved on the phone by the service worker (own cache, kept across
@@ -363,11 +364,12 @@ function PanelHeader({ title, subtitle }) {
   );
 }
 
-function CheckBox({ checked, onToggle }) {
+function CheckBox({ checked, onToggle, label }) {
   return (
     <button
       onClick={onToggle}
       aria-pressed={checked}
+      aria-label={label}
       style={{
         width: 26,
         height: 26,
@@ -715,6 +717,33 @@ function makeCardPdf(card, rowGW, bst) {
     });
   }
 
+  // v24 base duties. A card without a duties field (pre-v24) prints no section, exactly as before.
+  if (card.duties) {
+    y += 3;
+    if (y > 268) {
+      doc.addPage();
+      y = 16;
+    }
+    doc.setFont("courier", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(20, 20, 20);
+    doc.text("DUTIES DONE", M, y);
+    y += 5;
+    doc.setFontSize(8.5);
+    dutiesPdfLines(card).forEach((ln) => {
+      const wrapped = doc.splitTextToSize(pdfText(ln.text), W - 2 * M);
+      if (y + wrapped.length * 3.9 > 284) {
+        doc.addPage();
+        y = 16;
+      }
+      doc.setFont("courier", ln.handover ? "bold" : "normal");
+      if (ln.handover) doc.setTextColor(200, 120, 0);
+      else doc.setTextColor(20, 20, 20);
+      doc.text(wrapped, M, y);
+      y += wrapped.length * 3.9;
+    });
+  }
+
   if (card.misc) {
     y += 3;
     doc.setFont("courier", "bold");
@@ -793,6 +822,9 @@ function freshCard() {
     // v20+: {v: 2, row, acReg, srp, site, dateZ, timeZ, oat, qnh, elev, paIn, eng: [..], result: {..}}
     // — see the PWR CHK section. row: null = SRP-level, number = flight index.
     powerChecks: [],
+    // v24 base duties: {id: true} for each ticked item (ids in src/duties.js). Cards from before
+    // v24 have no duties field and are never given one on load; the first tick creates it.
+    duties: {},
   };
 }
 
@@ -810,10 +842,10 @@ const isAutoNote = (v) => AUTO_NOTES.includes((v || "").toUpperCase());
 
 const rowUsed = (r) => Boolean(r.fltTime || r.shtdwn || r.fuel || r.notes || r.refuel || r.hems);
 const cardUsed = (c) =>
-  Boolean(c && (c.rows.some(rowUsed) || c.srp || c.gwDep || c.varField || c.vertField || c.plannedFuel || c.misc || c.powerChecks.length));
+  Boolean(c && (c.rows.some(rowUsed) || c.srp || c.gwDep || c.varField || c.vertField || c.plannedFuel || c.misc || c.powerChecks.length || Object.keys(c.duties || {}).length));
 
 function FlightCard({
-  page, // "ac" = aircraft data page, "flights" = flight rows page
+  page, // "ac" = aircraft data page, "flights" = flight rows page, "duties" = base duties checklist
   onRefuel,
   onPowerCheckStart,
   onPlannedFuel,
@@ -833,6 +865,8 @@ function FlightCard({
   const [refuelPanel, setRefuelPanel] = useState(null);
   const [lastReg, setLastReg] = useState(null);
   const [exporting, setExporting] = useState(false);
+  // DUTIES drop-downs open on screen ({key: true}); page state only, never saved. All start closed.
+  const [dutyOpen, setDutyOpen] = useState({});
   const [history, setHistory] = useState([]); // previous cards, newest first
   const [histIdx, setHistIdx] = useState(null); // null = current card
   const saveTimer = useRef(null);
@@ -1631,7 +1665,7 @@ function FlightCard({
 
   return (
     <>
-      <PanelHeader title={page === "ac" ? "AIRCRAFT DATA" : "FLIGHTS"} subtitle="REDHILL EGKR" />
+      <PanelHeader title={page === "ac" ? "AIRCRAFT DATA" : page === "duties" ? "BASE DUTIES" : "FLIGHTS"} subtitle="REDHILL EGKR" />
 
       {histIdx !== null && (
         <div
@@ -1652,6 +1686,15 @@ function FlightCard({
             CURRENT CARD
           </button>
         </div>
+      )}
+
+      {page === "duties" && (
+        <DutiesPage
+          card={card}
+          onDuties={(duties) => update({ duties })}
+          open={dutyOpen}
+          onOpen={(k) => setDutyOpen((o) => ({ ...o, [k]: !o[k] }))}
+        />
       )}
 
       {page === "ac" && (
@@ -1966,6 +2009,273 @@ function FlightCard({
         </span>
       </div>
     </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// TAB — DUTIES (v24): base duties checklist. The lists are src/duties.js; the ticks are on the
+// card (card.duties = {id: true}), so they belong to that card, save with it and print on its PDF.
+// Rendered per section so a later "card date's duties only" filter needs no restructuring.
+// ═══════════════════════════════════════════════════════════
+
+const DUTY_DAY_NAMES = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+const DUTY_DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]; // MONDAY … SATURDAY, then SUNDAY
+const DUTY_CW = DUTIES.daily.find((x) => x.id === "cw");
+const DUTY_PC = DUTIES.daily.find((x) => x.auto === "pc");
+
+// The card date's weekday (0 = Sunday); today's if the card date cannot be read.
+const dutyWeekday = (card) => {
+  const d = parseCardDate(card && card.date);
+  return d ? d.getUTCDay() : new Date().getDay();
+};
+const dutyLeaves = (list) => list.flatMap((it) => it.sub || [it]);
+// Ticked by hand, or (the power check) any power check recorded on this card, of any shape.
+const dutyDone = (card, it) =>
+  Boolean((card.duties && card.duties[it.id]) || (it.auto === "pc" && (card.powerChecks || []).length > 0));
+const dutyCount = (card, list) => {
+  const L = dutyLeaves(list);
+  return [L.filter((x) => dutyDone(card, x)).length, L.length];
+};
+// What the handover sheet must still carry: "" = nothing.
+const dutyHandoverGap = (card) =>
+  [dutyDone(card, DUTY_CW) ? null : "COMPRESSOR WASH", dutyDone(card, DUTY_PC) ? null : "POWER CHECK"].filter(Boolean).join(" + ");
+
+// Card PDF lines: only done items, in list order, upper case; a part-done parent as NAME (k/n).
+function dutiesPdfLines(card) {
+  const done = (list) =>
+    list
+      .map((it) => {
+        if (!it.sub) return dutyDone(card, it) ? it.t.toUpperCase() : null;
+        const [k, n] = dutyCount(card, it.sub);
+        return k === 0 ? null : k === n ? it.t.toUpperCase() : `${it.t.toUpperCase()} (${k}/${n})`;
+      })
+      .filter(Boolean)
+      .join("; ") || "-";
+  const wd = dutyWeekday(card);
+  const lines = [
+    { text: `DAILY: ${done(DUTIES.daily)}` },
+    { text: `NIGHT: ${done(DUTIES.night)}` },
+    { text: `${DUTY_DAY_NAMES[wd]}: ${done(DUTIES.days[wd] || [])}` },
+    { text: `OPTIONAL: ${done(DUTIES.optional)}` },
+    { text: `WINTER: ${done(DUTIES.winter)}` },
+  ];
+  const gap = dutyHandoverGap(card);
+  if (gap) lines.push({ text: `HANDOVER: ${gap} NOT DONE`, handover: true });
+  return lines;
+}
+
+function DutiesPage({ card, onDuties, open, onOpen }) {
+  const wd = dutyWeekday(card);
+  const dateText = parseCardDate(card.date) ? String(card.date).trim() : todayString();
+  // A tick on a pre-v24 card (no duties field) creates the field on that card.
+  const setTicks = (ids, on) => {
+    const next = { ...(card.duties || {}) };
+    ids.forEach((id) => {
+      if (on) next[id] = true;
+      else delete next[id];
+    });
+    onDuties(next);
+  };
+  const hand = (card.duties || {});
+
+  const tag = (text, outline) => (
+    <span
+      data-duty-tag={text}
+      style={{
+        fontSize: 9.5,
+        letterSpacing: "0.1em",
+        padding: "2px 6px",
+        borderRadius: 4,
+        fontWeight: 600,
+        background: outline ? "transparent" : C.cyan,
+        color: outline ? C.grey : C.bg,
+        border: `1px solid ${outline ? C.edge : C.cyan}`,
+      }}
+    >
+      {text}
+    </span>
+  );
+  const box = (key, now, children) => (
+    <div data-duty-sec={key} style={{ border: `1px solid ${now ? C.cyan : C.edge}`, borderRadius: 8, marginBottom: 10 }}>
+      {children}
+    </div>
+  );
+  const rowStyle = (first) => ({
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    minHeight: 44,
+    boxSizing: "border-box",
+    padding: "9px 0",
+    borderTop: first ? "none" : `1px solid ${C.edge}`,
+  });
+  const textStyle = (done) => ({
+    color: done ? C.grey : C.white,
+    textDecoration: done ? "line-through" : "none",
+    fontSize: 12.5,
+    lineHeight: 1.45,
+  });
+  const note = (color, text, attr) => (
+    <span {...attr} style={{ display: "block", color, fontSize: 9.5, letterSpacing: "0.06em", marginTop: 3 }}>
+      {text}
+    </span>
+  );
+  const count = (k, n) => (
+    <span data-duty-count style={{ color: C.grey, fontWeight: 400, letterSpacing: "0.06em", marginLeft: 6 }}>
+      {k}/{n}
+    </span>
+  );
+
+  const leafRow = (it, first) => {
+    const done = dutyDone(card, it);
+    const gap = it.handover ? dutyHandoverGap(card) : "";
+    return (
+      <div key={it.id} data-duty={it.id} data-done={done ? "1" : "0"} style={rowStyle(first)}>
+        <CheckBox checked={done} label={it.t} onToggle={() => setTicks([it.id], !hand[it.id])} />
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={textStyle(done)}>{it.t}</span>
+          {it.auto === "pc" && note(C.cyan, "AUTO · PWR CHK", { "data-duty-auto": "" })}
+          {gap && note(C.amber, `HAND OVER: ${gap} NOT DONE`, { "data-duty-handover": "" })}
+        </span>
+      </div>
+    );
+  };
+
+  const parentRow = (it, first) => {
+    const [k, n] = dutyCount(card, it.sub);
+    const all = k === n;
+    const isOpen = !!open[it.id];
+    return (
+      <div key={it.id}>
+        <div data-duty={it.id} data-done={all ? "1" : "0"} style={rowStyle(first)}>
+          <CheckBox checked={all} label={it.t} onToggle={() => setTicks(it.sub.map((x) => x.id), !all)} />
+          <span style={{ flex: 1, minWidth: 0, ...textStyle(all) }}>{it.t}</span>
+          <button
+            data-duty-subtoggle={it.id}
+            aria-expanded={isOpen}
+            aria-label={`${it.t} items`}
+            onClick={() => onOpen(it.id)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              minHeight: 44,
+              background: "transparent",
+              border: 0,
+              padding: 0,
+              cursor: "pointer",
+              fontFamily: mono,
+              fontSize: 11,
+            }}
+          >
+            <span data-duty-count style={{ color: C.grey, letterSpacing: "0.06em" }}>
+              {k}/{n}
+            </span>
+            <ExpandArrow open={isOpen} />
+          </button>
+        </div>
+        {isOpen && (
+          <div data-duty-sub={it.id} style={{ paddingLeft: 38, paddingBottom: 4 }}>
+            <div style={{ borderLeft: `1px solid ${C.edge}`, paddingLeft: 12 }}>{it.sub.map((x, j) => leafRow(x, j === 0))}</div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const items = (list) => (
+    <div style={{ padding: "0 12px 6px" }}>{list.map((it, i) => (it.sub ? parentRow(it, false) : leafRow(it, false)))}</div>
+  );
+
+  const dropSection = (key, title, list, tagEl, now) => {
+    const [k, n] = dutyCount(card, list);
+    const isOpen = !!open[key];
+    return box(
+      key,
+      now,
+      <>
+        <button
+          data-duty-toggle={key}
+          aria-expanded={isOpen}
+          onClick={() => onOpen(key)}
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 8,
+            width: "100%",
+            minHeight: 44,
+            padding: "10px 12px",
+            background: "transparent",
+            border: 0,
+            cursor: "pointer",
+            textAlign: "left",
+            fontFamily: mono,
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: "0.14em",
+            color: C.white,
+          }}
+        >
+          <span>
+            {title}
+            {count(k, n)}
+          </span>
+          <span style={{ display: "flex", alignItems: "center", gap: 8, flex: "none" }}>
+            {tagEl}
+            <ExpandArrow open={isOpen} />
+          </span>
+        </button>
+        {isOpen && items(list)}
+      </>
+    );
+  };
+
+  const daySection = (d) => {
+    const now = d === wd;
+    const list = DUTIES.days[d] || [];
+    return box(
+      `day${d}`,
+      now,
+      <>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "10px 12px",
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: "0.14em",
+            color: now ? C.cyan : C.grey,
+          }}
+        >
+          <span>{DUTY_DAY_NAMES[d]}</span>
+          {now && tag("TODAY")}
+        </div>
+        {list.length ? (
+          items(list)
+        ) : (
+          <div data-duty-none style={{ color: C.grey, fontSize: 11.5, padding: "2px 12px 12px", letterSpacing: "0.04em" }}>
+            No duties
+          </div>
+        )}
+      </>
+    );
+  };
+
+  return (
+    <div data-duties style={{ fontFamily: mono, marginBottom: 8 }}>
+      <div data-duty-date style={{ color: C.grey, fontSize: 11, letterSpacing: "0.08em", margin: "-8px 0 14px", lineHeight: 1.6 }}>
+        CARD DATE <span style={{ color: C.white, fontWeight: 600 }}>{dateText}</span> ·{" "}
+        <span style={{ color: C.white, fontWeight: 600 }}>{DUTY_DAY_NAMES[wd]}</span>
+      </div>
+      {dropSection("daily", "DAILY CHECKS / END OF SHIFT", DUTIES.daily, tag("TODAY"), true)}
+      {dropSection("night", "NIGHT SHIFT", DUTIES.night, tag("NIGHTS", true), true)}
+      {DUTY_DAY_ORDER.map((d) => <div key={d}>{daySection(d)}</div>)}
+      {dropSection("optional", "OPTIONAL JOBS", DUTIES.optional, null, false)}
+      {dropSection("winter", "WINTER JOBS", DUTIES.winter, null, false)}
+    </div>
   );
 }
 
@@ -3764,15 +4074,13 @@ function App() {
     <button
       onClick={() => openTab(id)}
       style={{
-        flex: "1 1 auto",
         background: tab === id ? C.panel : "transparent",
         border: `1px solid ${tab === id ? C.edge : "transparent"}`,
         borderRadius: 8,
         color: tab === id ? C.cyan : C.grey,
         fontFamily: mono,
-        // Five tabs + theme toggle must share one row at 375px: tabs size to their label
-        // (flex 1 1 auto, 4px side padding, 6px gaps, 36px toggle) and never wrap or clip.
-        // 11px / 0.05em overflowed by 1-3px at 375px (measured), so 10.5px / 0.03em.
+        // v24: two rows of three (grid 1fr 1fr 1fr 40px, the toggle spans both rows). Labels never
+        // wrap or clip at 375px. Text size kept from the one-row bar (10.5px / 0.03em).
         fontSize: 10.5,
         fontWeight: 600,
         letterSpacing: "0.03em",
@@ -3814,18 +4122,19 @@ function App() {
       `}</style>
 
       <div className="shell-scale" style={{ width: "100%", maxWidth: 460 }}>
-        <div data-tabbar style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+        <div data-tabbar style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 40px", gap: 6, marginBottom: 12 }}>
           {tabBtn("ac", "A/C DATA")}
           {tabBtn("card", "FLIGHTS")}
           {tabBtn("uplift", "UPLIFT")}
+          {tabBtn("duties", "DUTIES")}
           {tabBtn("pwr", "PWR CHK")}
           {tabBtn("ifr", "IFR FUEL")}
           <button
             onClick={toggleTheme}
             aria-label="toggle day/night mode"
             style={{
-              width: 36,
-              flex: "none",
+              gridColumn: 4,
+              gridRow: "1 / span 2",
               background: "transparent",
               border: `1px solid ${C.edge}`,
               borderRadius: 8,
@@ -3848,9 +4157,9 @@ function App() {
             boxShadow: theme === "night" ? "0 20px 60px rgba(0,0,0,0.6)" : "0 8px 30px rgba(0,0,0,0.12)",
           }}
         >
-          <div style={{ display: tab === "card" || tab === "ac" ? "block" : "none" }}>
+          <div style={{ display: tab === "card" || tab === "ac" || tab === "duties" ? "block" : "none" }}>
             <FlightCard
-              page={tab === "ac" ? "ac" : "flights"}
+              page={tab === "ac" ? "ac" : tab === "duties" ? "duties" : "flights"}
               onRefuel={handleRefuel}
               onPowerCheckStart={handlePowerCheckStart}
               onPlannedFuel={(v) => setTarget(v)}

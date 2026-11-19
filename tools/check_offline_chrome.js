@@ -116,7 +116,7 @@ const stopServer = async () => { if (server) { server.kill("SIGKILL"); server = 
       return { w: innerWidth, labels: bs.map(b => b.textContent.trim()), over: bs.filter(b => b.scrollWidth > b.clientWidth).map(b => b.textContent),
         rows: new Set(bs.map(b => Math.round(b.getBoundingClientRect().top))).size, barOver: document.querySelector('[data-tabbar]').scrollWidth > document.querySelector('[data-tabbar]').clientWidth,
         pageOver: document.documentElement.scrollWidth > innerWidth }; })`);
-    check(`375 px: five tabs + toggle on one row, no tab clipped (${bar && bar.labels.slice(0, 5).join(" · ")})`, bar && bar.w === 375 && bar.over.length === 0 && bar.rows === 1 && !bar.barOver && !bar.pageOver && bar.labels.slice(0, 5).join("|") === "A/C DATA|FLIGHTS|UPLIFT|PWR CHK|IFR FUEL");
+    check(`375 px: six tabs on two rows + toggle, no tab clipped (${bar && bar.labels.slice(0, 6).join(" · ")})`, bar && bar.w === 375 && bar.over.length === 0 && bar.rows === 2 && !bar.barOver && !bar.pageOver && bar.labels.slice(0, 6).join("|") === "A/C DATA|FLIGHTS|UPLIFT|DUTIES|PWR CHK|IFR FUEL");
 
     // ── B. no signal at all ──
     await stopServer();

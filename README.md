@@ -8,7 +8,14 @@ A self-contained web app (single `index.html`, no server, no accounts) replacing
 
 One card = **one SRP page** (seven sectors). Several cards per day is normal; see §4 (carry-over).
 
-The app has five tabs: **A/C DATA** (once-per-SRP setup and admin), **FLIGHTS** (the seven sector rows), **UPLIFT** (fuel calculator), **PWR CHK** (hover power assurance check, §3B), **IFR FUEL** (multi-sector IFR fuel cross-check, §3A). It auto-scales by device: iPhone 1×, iPad mini ≈1.35×, iPad ≈1.55×.
+The app has six tabs in two rows of three, with the ☀/☾ day/night toggle to their right spanning both rows:
+
+| | | |
+|---|---|---|
+| **A/C DATA** — once-per-SRP setup and admin (§1) | **FLIGHTS** — the seven sector rows (§2) | **UPLIFT** — fuel calculator (§3) |
+| **DUTIES** — base duties checklist (§3C) | **PWR CHK** — hover power assurance check (§3B) | **IFR FUEL** — multi-sector IFR fuel cross-check (§3A) |
+
+It auto-scales by device: iPhone 1×, iPad mini ≈1.35×, iPad ≈1.55×.
 
 ---
 
@@ -53,7 +60,7 @@ Required once per SRP / 10 flight hours / 24 hours → recorded **once per card*
 
 ### 1.5 PDF export
 
-Generated on-device. Filename/share subject: `REG SRP nnnn DD.MM.YYYY` (iOS Mail adopts the filename as subject by convention — Apple behaviour, not guaranteed). Recipient cannot be pre-filled by iOS — pick the address in Mail after the share sheet. The PDF contains the full card regardless of the tab split: header, every used flight with DEP GW / VAR / VERT margins / flags / notes / grid, the SRP >4600 summary line (§2.3), power check, MISC.
+Generated on-device. Filename/share subject: `REG SRP nnnn DD.MM.YYYY` (iOS Mail adopts the filename as subject by convention — Apple behaviour, not guaranteed). Recipient cannot be pre-filled by iOS — pick the address in Mail after the share sheet. The PDF contains the full card regardless of the tab split: header, every used flight with DEP GW / VAR / VERT margins / flags / notes / grid, the SRP >4600 summary line (§2.3), power check, duties done (§3C), MISC.
 
 ---
 
@@ -152,6 +159,12 @@ UPLIFT L  = UPLIFT KG ÷ DENSITY
 - Still negative on the repeat → *RFM performance may not be achieved, refer to MM*.
 
 A/C REG and SRP are taken from the A/C DATA page, and keep following it until you type over them on PWR CHK. Each engine's reading path is drawn over the actual RFM page (ENG 1 red solid; ENG 2 magenta dotted, drawn on top so both stay traceable where they overlap), which is saved on the phone for use with no signal. The **CHART** section is a drop-down (purple arrow; open to start with, and stays minimised for the session once closed). The optional **CROSS-CHECK: OTHER APP** drop-down starts closed; it compares another app's max figures (agrees within 2 °C / 0.1 % — a trial threshold, not an RFM figure). Minimising either section only affects the screen: the PDF always includes both. **EXPORT POWER CHECK PDF** produces a one-page record, `PC_<REG>_<DD.MM.YYYY>_<HHMM>Z.pdf`, with the RFM page and a PIC signature line; the card PDF prints a compact version of the recorded check. **This is a personal trial — the company power check method governs.**
+
+---
+
+## 3C. DUTIES tab — base duties checklist
+
+**DUTIES** is the Redhill base duties checklist for the card on screen: **DAILY CHECKS / END OF SHIFT**, **NIGHT SHIFT**, every weekday (Monday to Saturday, then Sunday; the card date's day is outlined in cyan and tagged TODAY; a day with nothing on it says "No duties"), **OPTIONAL JOBS** and **WINTER JOBS**. The daily, night, optional and winter lists are drop-downs (purple arrow, all closed to start) with a done count. Items with their own list (Aircraft wash, Fuel check cabinet) tick or untick all their parts with one tap, and open with their arrow. **Power check** ticks itself as soon as a power check is recorded on the card. While the compressor wash or the power check is not done, **Handover sheet** shows an amber reminder of what to hand over. Ticks are saved on the card (a new card, or a carry-over, starts with none) and the card PDF lists what was done, under DUTIES DONE. Cards from before v24 show no ticks and print as before.
 
 ---
 
@@ -275,7 +288,7 @@ An SRP page holds seven sectors. When a day overruns, tick **CARRY OVER A/C DATA
 - **increments SRP by one** (the SRP field is digits-only, so this always applies);
 - sets the **first sector's departure fuel to the old card's last landed fuel** (so sector 1 of the new card is GW DEP + (landed − planned), not GW DEP) — or, if that last sector was refuelled, its confirmed REFUEL TO figure (left as planned when it was the planned figure), or planned fuel if no landed fuel was recorded. If the last sector ticked HEMS, the new card's flight 1 is flagged PATIENT ON BOARD. Sector 2 onward follow each landing as usual;
 - sets **AVAILABLE = the old card's REMAINING**, so the maintenance countdown continues across SRP pages;
-- starts with blank flights, MISC, and power check (the once-per-SRP/10 hr/24 hr power check requirement is judged by the crew, not re-prompted);
+- starts with blank flights, MISC, power check and duties (no ticks) (the once-per-SRP/10 hr/24 hr power check requirement is judged by the crew, not re-prompted);
 - **does NOT copy DATE or SUNRISE/SUNSET** — the new card always shows today's date and today's recomputed sun times, even for a same-day overrun (where today already equals the outgoing date, so nothing changes) or a shift that crosses midnight (where copying would silently show yesterday's date and stale sun times).
 
 The completed card is archived under PREVIOUS CARDS with its original SRP.
@@ -288,12 +301,12 @@ The completed card is archived under PREVIOUS CARDS with its original SRP.
 
 ## 6. Storage, privacy, display
 
-- Everything lives in `localStorage` on that phone: current card, previous 4 cards, last reg, theme, and the IFR FUEL trip (its own key, `ifr-fuel-trip`, separate from the card). Each device independent; nothing transmitted. GPS used only when a HEMS box is ticked.
+- Everything lives in `localStorage` on that phone: current card (including its DUTIES ticks), previous 4 cards, last reg, theme, and the IFR FUEL trip (its own key, `ifr-fuel-trip`, separate from the card). Each device independent; nothing transmitted. GPS used only when a HEMS box is ticked.
 - localStorage is not indestructible — clearing Safari website data wipes cards. The emailed PDF is the durable record.
 - **Launches with no signal.** A service worker keeps a copy of the app on the phone. Open it once with signal (and add it to the Home Screen); after that it launches with no connection at all. On weak signal it tries the network for about 3 seconds, then opens the saved copy rather than hanging. With good signal it loads the latest version and refreshes the saved copy.
 - **Updates never interrupt you.** A new version downloads quietly in the background; the page you have open is never reloaded or swapped mid-session. The next time you open the app it is the new version (check the `vN · date` stamp).
 - **Honest limit:** this is as reliable as the web allows, not as bulletproof as a native app. iOS can still clear a web app's saved data after long periods of non-use or when the phone is very short of storage; the app then needs one launch with signal to save itself again (and any cards on the phone would be lost with it — the emailed PDFs are the record). For a tool used regularly this is rare; only a native App Store build removes it entirely.
-- ☀/☾ (top right): night (dark MFD) / day (high-contrast sunlight) theme, per device.
+- ☀/☾ (right of the tabs): night (dark MFD) / day (high-contrast sunlight) theme, per device. Switching keeps everything on screen, including a power check you have not recorded yet.
 - Safe-area padding keeps content clear of the iPhone status bar and home indicator; layout auto-scales on iPads.
 - A small `vN · dd.mm.yyyy` version/build-date stamp sits below the card on every tab, so you can confirm which build is live after a deploy.
 
