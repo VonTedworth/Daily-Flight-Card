@@ -18,6 +18,7 @@ import {
   placeLabels,
 } from "./fuelcalc.js";
 import { explainSector } from "./ifr-explain.mjs";
+import { pressureAltitude, assess, pcPath, PC_IMAGE } from "./powercheck.js";
 
 // ═══════════════════════════════════════════════════════════
 // Fuel Uplift + Daily Flight Card — v10
@@ -31,7 +32,8 @@ import { explainSector } from "./ifr-explain.mjs";
 //  4. DAY/NIGHT theme toggle (day = high contrast for sunlight).
 //  5. Power check is once per card: the 0-minute ground-run
 //     prompt triggers it, or the POWER CHECK button by MISC.
-//     No per-flight checkbox.
+//     No per-flight checkbox. Since v20 it is worked on its own
+//     PWR CHK tab (RFM Supp 3 Fig S3-13 power assurance check).
 // ═══════════════════════════════════════════════════════════
 
 // localStorage shim with the async storage API shape.
@@ -61,6 +63,7 @@ const NIGHT = {
   grey: "#8fa3b3",
   amber: "#ffb347",
   white: "#e8eef2",
+  red: "#ff6b6b", // power check: a PAM that fails, or PAM still negative on the repeat
   purple: "#B57CFF", // reserved for "tap to expand" (ExpandArrow) — use for nothing else
 };
 const DAY = {
@@ -74,6 +77,7 @@ const DAY = {
   grey: "#4a545e",
   amber: "#9a4a00",
   white: "#10151b",
+  red: "#b3261e",
   purple: "#6A2FC0", // darker so it holds contrast on the white day panel
 };
 const C = { ...NIGHT };
@@ -83,7 +87,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v19";
+const APP_VERSION = "v20";
 // The user guide (rendered on GitHub). Opening it needs signal; the app itself does not.
 const README_URL = "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md";
 // The crew guide (33-slide PDF), saved on the phone by the service worker (own cache, kept across
@@ -387,7 +391,7 @@ function CheckBox({ checked, onToggle }) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// TAB — Fuel uplift calculator (+ power check details panel)
+// TAB — Fuel uplift calculator (fuel only; the power check moved to the PWR CHK tab in v20)
 // ═══════════════════════════════════════════════════════════
 
 function FuelCalc({
@@ -399,17 +403,8 @@ function FuelCalc({
   setDensity,
   sourceRow,
   onConfirm,
-  powerCheckRow, // false = closed, null = SRP-level, number = flight
-  onPowerCheckConfirm,
-  onPowerCheckCancel,
 }) {
   const c = parseNum(current), t = parseNum(target), d = parseNum(density);
-
-  const [pc, setPc] = useState({ oat: "", qnh: "", e1n1: "", e1itt: "", e2n1: "", e2itt: "" });
-  useEffect(() => {
-    setPc({ oat: "", qnh: "", e1n1: "", e1itt: "", e2n1: "", e2itt: "" });
-  }, [powerCheckRow]);
-  const pcComplete = Object.values(pc).every((v) => String(v).trim() !== "");
 
   const result = useMemo(() => {
     if (c === null || t === null || d === null) return { state: "incomplete" };
@@ -428,51 +423,6 @@ function FuelCalc({
       <div style={inputWell()}>
         <input inputMode="decimal" value={value} onChange={(e) => setter(SAN.dec(e.target.value))} style={inputStyle()} />
         <span style={{ color: C.grey, fontSize: 14, marginLeft: 8, fontFamily: mono }}>{unit}</span>
-      </div>
-    </label>
-  );
-
-  const PC_KIND = { oat: "int", qnh: "int", e1n1: "dec", e1itt: "int", e2n1: "dec", e2itt: "int" };
-  // OAT keeps the numeric pad; a ± button flips the sign since
-  // the iOS number pad has no minus key.
-  const flipOatSign = () =>
-    setPc((p) => ({ ...p, oat: p.oat.startsWith("-") ? p.oat.slice(1) : p.oat === "" ? "-" : "-" + p.oat }));
-  const pcField = (key, lab, unit) => (
-    <label style={{ flex: 1, minWidth: 0 }}>
-      <span style={{ ...label(), fontSize: 9, marginBottom: 3, letterSpacing: "0.1em" }}>{lab}</span>
-      <div style={{ ...inputWell(), padding: "8px 10px", alignItems: "center" }}>
-        <input
-          inputMode={KIND_MODE[PC_KIND[key]]}
-          value={pc[key]}
-          onChange={(e) =>
-            setPc({
-              ...pc,
-              [key]: (key === "oat" && pc.oat.startsWith("-") ? "-" : "") + SAN[PC_KIND[key]](e.target.value),
-            })
-          }
-          style={inputStyle(16)}
-        />
-        {key === "oat" && (
-          <button
-            onClick={flipOatSign}
-            aria-label="toggle temperature sign"
-            style={{
-              background: "transparent",
-              border: `1px solid ${C.edge}`,
-              borderRadius: 4,
-              color: pc.oat.startsWith("-") ? C.amber : C.grey,
-              fontFamily: mono,
-              fontSize: 13,
-              fontWeight: 600,
-              padding: "2px 7px",
-              marginLeft: 6,
-              cursor: "pointer",
-            }}
-          >
-            ±
-          </button>
-        )}
-        <span style={{ color: C.grey, fontSize: 11, marginLeft: 6, fontFamily: mono }}>{unit}</span>
       </div>
     </label>
   );
@@ -536,51 +486,6 @@ function FuelCalc({
         <button onClick={() => onConfirm(result.litres, result.upliftKg)} style={{ ...btnStyle(C.green), marginTop: 16 }}>
           CONFIRM UPLIFT → FLIGHT {sourceRow + 1}
         </button>
-      )}
-
-      {powerCheckRow !== false && (
-        <div style={{ marginTop: 20, border: `1px solid ${C.green}60`, borderRadius: 8, padding: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
-            <span style={{ color: C.green, fontSize: 12, fontWeight: 600, letterSpacing: "0.15em", fontFamily: mono }}>
-              POWER CHECK DETAILS
-            </span>
-            <span style={{ color: C.grey, fontSize: 11, fontFamily: mono }}>
-              {powerCheckRow === null ? "THIS SRP" : `FLIGHT ${powerCheckRow + 1}`}
-            </span>
-          </div>
-          <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-            {pcField("oat", "TEMP", "°C")}
-            {pcField("qnh", "PRESSURE", "HPA")}
-          </div>
-          <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-            <div style={{ flex: 1, border: `1px solid ${C.edge}`, borderRadius: 6, padding: 10 }}>
-              <span style={{ ...label(), fontSize: 10, marginBottom: 8 }}>ENG 1</span>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {pcField("e1n1", "N1", "%")}
-                {pcField("e1itt", "ITT", "°C")}
-              </div>
-            </div>
-            <div style={{ flex: 1, border: `1px solid ${C.edge}`, borderRadius: 6, padding: 10 }}>
-              <span style={{ ...label(), fontSize: 10, marginBottom: 8 }}>ENG 2</span>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {pcField("e2n1", "N1", "%")}
-                {pcField("e2itt", "ITT", "°C")}
-              </div>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button
-              onClick={() => onPowerCheckConfirm(pc)}
-              disabled={!pcComplete}
-              style={{ ...btnStyle(pcComplete ? C.green : C.grey), opacity: pcComplete ? 1 : 0.5 }}
-            >
-              CONFIRM → MISC
-            </button>
-            <button onClick={onPowerCheckCancel} style={btnStyle(C.grey)}>
-              CANCEL
-            </button>
-          </div>
-        </div>
       )}
 
       <p style={{ marginTop: 16, marginBottom: 0, color: C.grey, fontSize: 10.5, lineHeight: 1.6, fontFamily: mono }}>
@@ -788,6 +693,18 @@ function makeCardPdf(card, rowGW, bst) {
     y += 5;
     doc.setFontSize(8.5);
     card.powerChecks.forEach((p) => {
+      if (p && p.v === 2) {
+        // v20 power assurance check: from the snapshot recorded on the card (never recomputed).
+        pcCardPdfLines(p).forEach((ln) => {
+          doc.setFont("courier", ln.bold ? "bold" : "normal");
+          doc.setTextColor(...PC_PDF_TONE[ln.tone]);
+          const wrapped = doc.splitTextToSize(pcPdfText(ln.text), W - 2 * M);
+          doc.text(wrapped, M, y);
+          y += wrapped.length * 4.4;
+        });
+        doc.setTextColor(0, 130, 60); // back to the section colour for any legacy line
+        return;
+      }
       doc.setFont("courier", "normal");
       doc.text(
         `${p.row === null ? "SRP" : "FLT " + (p.row + 1)}: OAT ${p.oat} C  QNH ${p.qnh} HPA  ENG1 N1 ${p.e1n1}% ITT ${p.e1itt} C  ENG2 N1 ${p.e2n1}% ITT ${p.e2itt} C`,
@@ -872,7 +789,10 @@ function freshCard() {
     sunriseSet: d ? sunTimes(d, REDHILL.lat, REDHILL.lng) : "",
     rows: Array.from({ length: NUM_ROWS }, freshRow),
     misc: "",
-    powerChecks: [], // [{row: index|null, oat, qnh, e1n1, e1itt, e2n1, e2itt}]
+    // Legacy (pre-v20, still displayed/printed as recorded): {row, oat, qnh, e1n1, e1itt, e2n1, e2itt}
+    // v20+: {v: 2, row, acReg, srp, site, dateZ, timeZ, oat, qnh, elev, paIn, eng: [..], result: {..}}
+    // — see the PWR CHK section. row: null = SRP-level, number = flight index.
+    powerChecks: [],
   };
 }
 
@@ -902,6 +822,7 @@ function FlightCard({
   onPendingApplied,
   pendingPowerCheck,
   onPowerCheckApplied,
+  onCardInfo, // ({acReg, srp, powerChecks}) of the card on screen, for the PWR CHK tab
 }) {
   const [card, setCard] = useState(null);
   const [confirming, setConfirming] = useState(false);
@@ -1088,6 +1009,12 @@ function FlightCard({
   }, [pendingPowerCheck, card === null]);
 
   const removePowerCheck = (row) => update({ powerChecks: card.powerChecks.filter((p) => p.row !== row) });
+
+  // The PWR CHK tab needs the card's reg, SRP and power checks (it never reads storage itself).
+  useEffect(() => {
+    if (card && onCardInfo) onCardInfo({ acReg: card.acReg, srp: card.srp, powerChecks: card.powerChecks });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card && card.acReg, card && card.srp, card && card.powerChecks]);
 
   // ── Inline refuel ─────────────────────────────────────────
   // If planned fuel and this row's landed fuel are known, work
@@ -1859,6 +1786,21 @@ function FlightCard({
           >
             {card.powerChecks.map((p) => (
               <div key={String(p.row)} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                {p.v === 2 ? (
+                  <div
+                    data-pc-entry={p.row === null ? "srp" : p.row}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => onPowerCheckStart(p.row)}
+                    style={{ color: pcTone(pcEntryTone(p)), fontFamily: mono, fontSize: 11.5, lineHeight: 1.6, flex: 1, minWidth: 0, cursor: "pointer" }}
+                  >
+                    {pcEntryLines(p).map((ln, k) => (
+                      <div key={k} style={k === 0 || k === 3 ? { fontWeight: 700 } : undefined}>
+                        {ln}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
                 <div style={{ color: C.green, fontFamily: mono, fontSize: 12, lineHeight: 1.7, flex: 1 }}>
                   <span style={{ fontWeight: 700 }}>
                     {p.row === null ? "SRP POWER CHECK" : `FLT ${p.row + 1} POWER CHECK`}
@@ -1867,6 +1809,7 @@ function FlightCard({
                   <br />
                   ENG1 N1 {p.e1n1}% ITT {p.e1itt}°C{"  ·  "}ENG2 N1 {p.e2n1}% ITT {p.e2itt}°C
                 </div>
+                )}
                 <button
                   onClick={() => removePowerCheck(p.row)}
                   aria-label="remove power check"
@@ -2893,6 +2836,801 @@ function IfrFuel() {
   );
 }
 
+// ═══════════════════════════════════════════════════════════
+// TAB — PWR CHK: hover power assurance check (RFM Supp 3 Fig S3-13, EAPS OFF)
+// ═══════════════════════════════════════════════════════════
+// PERSONAL TRIAL — the company power check method governs (the page says so).
+// The chart maths live in src/powercheck.js: the RFM PDF's own vector paths. Never edit PC_CHART.
+// Pass / repeat / refer logic = RFM Supplement 3 steps 7, 11 and 12 exactly:
+//   1-minute reading: both PAMs (max − indicated) must be POSITIVE (> 0) → WITHIN LIMITS;
+//   otherwise repeat holding a fixed collective for 3 minutes: ZERO OR POSITIVE is acceptable;
+//   still negative on the repeat → RFM performance may not be achieved, refer to the MM.
+// Max ITT / NG come from powercheck.js already rounded DOWN (whole °C, 0.1 %); the chart is never
+// extended (outside its lines there is no result).
+
+const PC_CHART_REF = "S3-13 Issue 3 Rev 1";
+const PC_DEFAULTS = { tq: "95", elev: "222", site: "EGKR" };
+const PC_TQ_COMPANY_MIN = 92; // advisory only — never changes the result
+// Cross-check against another app: "AGREES" when within 2 °C ITT and 0.1 % NG. This is a TRIAL
+// comparison threshold chosen for the trial — NOT an RFM figure — and it never changes the result.
+const PC_AGREE = { itt: 2, ng: 0.1 };
+// Fixed colours (not theme colours): they must read on the white RFM page in both themes.
+const PC_ENG_STYLE = [
+  { col: "#e0201b", dash: null }, // ENG 1 red, solid
+  { col: "#b000d0", dash: [6, 4] }, // ENG 2 magenta, dashed
+];
+
+const pad2 = (n) => String(n).padStart(2, "0");
+function nowZulu(d = new Date()) {
+  return {
+    date: `${pad2(d.getUTCDate())}.${pad2(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`,
+    time: `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`,
+  };
+}
+const pcSgn = (v, d) => (v > 0 ? "+" : v < 0 ? "−" : "±") + Math.abs(v).toFixed(d); // screen
+const pcSgnA = (v, d) => (v > 0 ? "+" : v < 0 ? "-" : "") + Math.abs(v).toFixed(d); // PDF (ASCII)
+
+const pcBlankEngine = () => ({ tq: PC_DEFAULTS.tq, itt: "", ng: "", rep: null, xItt: "", xNg: "" });
+function pcBlank(info) {
+  const z = nowZulu();
+  return {
+    acReg: ((info && info.acReg) || "").trim().toUpperCase(),
+    srp: (info && info.srp) || "",
+    site: PC_DEFAULTS.site,
+    dateZ: z.date,
+    timeZ: z.time,
+    oat: "",
+    qnh: "",
+    elev: PC_DEFAULTS.elev,
+    paIn: "",
+    eng: [pcBlankEngine(), pcBlankEngine()],
+  };
+}
+// A recorded (v2) entry back into editable strings.
+function pcFromEntry(p) {
+  const s = (v) => (v === null || v === undefined ? "" : String(v));
+  return {
+    acReg: s(p.acReg),
+    srp: s(p.srp),
+    site: s(p.site),
+    dateZ: s(p.dateZ),
+    timeZ: s(p.timeZ),
+    oat: s(p.oat),
+    qnh: s(p.qnh),
+    elev: s(p.elev),
+    paIn: s(p.paIn),
+    eng: [0, 1].map((i) => {
+      const e = (p.eng && p.eng[i]) || {};
+      return {
+        tq: s(e.tq),
+        itt: s(e.itt),
+        ng: s(e.ng),
+        rep: e.rep ? { tq: s(e.rep.tq), itt: s(e.rep.itt), ng: s(e.rep.ng) } : null,
+        xItt: s(e.xItt),
+        xNg: s(e.xNg),
+      };
+    }),
+  };
+}
+
+// Conditions: the PFD pressure altitude (1013 set, RFM step 4) when given, else ISA from QNH + elevation.
+function pcConditions(st) {
+  const oat = parseNum(st.oat), qnh = parseNum(st.qnh), elev = parseNum(st.elev), paIn = parseNum(st.paIn);
+  if (oat !== null && paIn !== null) return { oat, pa: paIn, paSource: "PFD" };
+  if (oat === null || qnh === null || elev === null) return null;
+  if (qnh < 900 || qnh > 1080) return { error: "QNH OUTSIDE 900–1080 HPA" };
+  return { oat, pa: pressureAltitude(qnh, elev), paSource: "QNH" };
+}
+function pcReading(r, c) {
+  const tq = parseNum(r.tq), itt = parseNum(r.itt), ng = parseNum(r.ng);
+  if (!c || c.error || tq === null || itt === null || ng === null) return null;
+  return { tq, itt, ng, ...assess({ tq, itt, ng }, c.pa, c.oat) };
+}
+function pcEngine(e, c) {
+  const first = pcReading(e, c);
+  const rep = e.rep ? pcReading(e.rep, c) : null;
+  let state = "incomplete";
+  if (first && first.error) state = "error";
+  else if (first) {
+    if (first.met) state = "met"; // step 11: both PAMs positive
+    else if (!e.rep) state = "repeat";
+    else if (!rep) state = "repeatPending";
+    else if (rep.error) state = "error";
+    else state = rep.ittMargin >= 0 && rep.ngMargin >= 0 ? "metOnRepeat" : "exceeds"; // step 12: zero or positive
+  }
+  const final = rep && !rep.error ? rep : first;
+  return { first, rep, final, state };
+}
+// One summary line; first match wins.
+function pcSummary(states, condError) {
+  if (condError) return ["warn", condError];
+  if (states.includes("error")) return ["warn", "OUTSIDE CHART — NO RESULT. CHECK INPUTS."];
+  const ex = states.map((s, i) => (s === "exceeds" ? i + 1 : null)).filter(Boolean);
+  if (ex.length) return ["bad", `ENG ${ex.join(" + ")}: PAM STILL NEGATIVE ON 3-MIN REPEAT — RFM PERFORMANCE MAY NOT BE ACHIEVED. REFER TO MM`];
+  if (states.some((s) => s === "repeat" || s === "repeatPending")) return ["warn", "REPEAT REQUIRED: HOLD FIXED COLLECTIVE 3 MIN AND RE-ENTER"];
+  if (states.length && states.every((s) => s === "met" || s === "metOnRepeat")) return ["ok", "BOTH ENGINES WITHIN LIMITS"];
+  return ["dim", "ENTER CONDITIONS AND READINGS"];
+}
+function pcCompute(st) {
+  const c = pcConditions(st);
+  const eng = st.eng.map((e) => pcEngine(e, c));
+  const summary = pcSummary(eng.map((E) => E.state), c && c.error);
+  const complete = Boolean(c && !c.error && eng.every((E) => E.first));
+  return { c, eng, summary, complete };
+}
+const pcTone = (k) => ({ ok: C.green, warn: C.amber, bad: C.red, dim: C.grey })[k] || C.grey;
+
+const PC_STATE_TEXT = {
+  met: ["ok", "WITHIN LIMITS"],
+  metOnRepeat: ["ok", "WITHIN LIMITS ON 3-MIN REPEAT"],
+  repeat: ["warn", "PAM ZERO OR NEGATIVE — REPEAT HOLDING FIXED COLLECTIVE FOR 3 MIN"],
+  repeatPending: ["warn", "ENTER 3-MIN REPEAT READINGS"],
+  exceeds: ["bad", "PAM STILL NEGATIVE ON 3-MIN REPEAT — RFM PERFORMANCE MAY NOT BE ACHIEVED. REFER TO MM"],
+};
+const PC_PDF_STATE = {
+  met: "WITHIN LIMITS",
+  metOnRepeat: "WITHIN LIMITS ON 3-MIN REPEAT",
+  repeat: "REPEAT REQUIRED",
+  repeatPending: "REPEAT NOT ENTERED",
+  exceeds: "PAM NEGATIVE ON 3-MIN REPEAT - REFER TO MM",
+  error: "OUTSIDE CHART",
+  incomplete: "INCOMPLETE",
+};
+
+// The stored card entry (v: 2). Inputs as typed; results as a snapshot taken now, so an archived
+// card never changes even if the chart data is ever updated.
+const pcSnap = (r) =>
+  !r
+    ? null
+    : r.error
+    ? { error: r.error }
+    : { maxItt: r.maxItt, maxNg: r.maxNg, ittMargin: r.ittMargin, ngMargin: r.ngMargin, chartItt: +r.chartItt.toFixed(2), chartNg: +r.chartNg.toFixed(3) };
+function pcEntry(row, st, R) {
+  const ok = R.c && !R.c.error;
+  return {
+    v: 2,
+    row,
+    acReg: st.acReg,
+    srp: st.srp,
+    site: st.site,
+    dateZ: st.dateZ,
+    timeZ: st.timeZ,
+    oat: st.oat,
+    qnh: st.qnh,
+    elev: st.elev,
+    paIn: ok && R.c.paSource === "PFD" ? st.paIn : "",
+    eng: st.eng.map((e) => ({ tq: e.tq, itt: e.itt, ng: e.ng, rep: e.rep ? { ...e.rep } : null, xItt: e.xItt, xNg: e.xNg })),
+    result: {
+      paFt: ok ? Math.round(R.c.pa) : null,
+      paSource: ok ? R.c.paSource : null,
+      chart: PC_CHART_REF,
+      eng: R.eng.map((E) => ({ state: E.state, first: pcSnap(E.first), rep: E.rep ? pcSnap(E.rep) : null })),
+    },
+  };
+}
+
+// ── Recorded v2 entries: A/C DATA list lines and the card PDF block (from the snapshot) ──
+const pcEntryTone = (p) => pcSummary(((p.result && p.result.eng) || []).map((e) => e.state), null)[0];
+function pcEntryLines(p) {
+  const r = p.result || { eng: [] };
+  const who = p.row === null ? "SRP" : `FLT ${p.row + 1}`;
+  const lines = [`${who} POWER CHECK · ${p.timeZ}Z · PA ${r.paFt === null ? "—" : r.paFt} FT · OAT ${p.oat}°C`];
+  [0, 1].forEach((i) => {
+    const e = (p.eng && p.eng[i]) || {}, E = r.eng[i] || {};
+    const useRep = Boolean(E.rep && !E.rep.error && e.rep);
+    const inp = useRep ? e.rep : e, res = useRep ? E.rep : E.first;
+    const tag = `ENG${i + 1}${useRep ? " 3-MIN" : ""}`;
+    lines.push(
+      !res || res.error
+        ? `${tag} TQ ${inp.tq} ITT ${inp.itt} NG ${inp.ng} · OUTSIDE CHART`
+        : `${tag} TQ ${inp.tq} ITT ${inp.itt}/${res.maxItt} (${pcSgn(res.ittMargin, 0)}) NG ${inp.ng}/${res.maxNg.toFixed(1)} (${pcSgn(res.ngMargin, 1)})`
+    );
+  });
+  lines.push(pcSummary(r.eng.map((e) => e.state), null)[1]);
+  return lines;
+}
+const PC_PDF_TONE = { ok: [0, 130, 60], warn: [200, 120, 0], bad: [200, 30, 30], dim: [110, 110, 110] };
+const pcStateTone = (s) => (s === "met" || s === "metOnRepeat" ? "ok" : s === "exceeds" ? "bad" : "warn");
+function pcCardPdfLines(p) {
+  const r = p.result || { eng: [] };
+  const out = [{ text: `${p.row === null ? "SRP" : "FLT " + (p.row + 1)} POWER CHECK ${p.timeZ}Z  OAT ${p.oat} C  PA ${r.paFt === null ? "-" : r.paFt} FT`, tone: "ok", bold: true }];
+  [0, 1].forEach((i) => {
+    const e = (p.eng && p.eng[i]) || {}, E = r.eng[i] || {};
+    const fmt = (label, inp, res, stateTxt) => {
+      const tq = parseNum(inp.tq), ng = parseNum(inp.ng);
+      const pre = `ENG${i + 1}${label} TQ ${tq === null ? inp.tq : tq.toFixed(1)} ITT ${inp.itt}`;
+      const ngTxt = ng === null ? inp.ng : ng.toFixed(1);
+      if (!res || res.error) return `${pre}  NG ${ngTxt}  ${stateTxt}`;
+      return `${pre} MAX ${res.maxItt} PAM ${pcSgnA(res.ittMargin, 0)}  NG ${ngTxt} MAX ${res.maxNg.toFixed(1)} PAM ${pcSgnA(res.ngMargin, 1)}  ${stateTxt}`;
+    };
+    const hasRep = Boolean(E.rep && e.rep);
+    const finalTxt = PC_PDF_STATE[E.state] || "";
+    out.push({ text: fmt("", e, E.first, hasRep ? PC_PDF_STATE.repeat : finalTxt), tone: hasRep ? "warn" : pcStateTone(E.state) });
+    if (hasRep) out.push({ text: fmt(" 3-MIN", e.rep, E.rep, finalTxt), tone: pcStateTone(E.state) });
+  });
+  return out;
+}
+
+// ── The RFM page image: fetched (served from the asset cache offline) once per session ──
+let rfmImagePromise = null;
+function loadRfmImage() {
+  if (!rfmImagePromise) {
+    rfmImagePromise = (async () => {
+      try {
+        if (typeof fetch !== "function") return null;
+        const r = await fetch(PC_IMAGE.file);
+        if (!r || !r.ok) return null;
+        const b = new Uint8Array(await r.arrayBuffer());
+        return b.length > 2 && b[0] === 0xff && b[1] === 0xd8 ? b : null; // a JPEG, not a notice
+      } catch {
+        return null;
+      }
+    })().then((b) => {
+      if (!b) rfmImagePromise = null; // not saved yet: try again next time
+      return b;
+    });
+  }
+  return rfmImagePromise;
+}
+
+// Courier is WinAnsi-only: arrows/minus via pdfText(), and no degree sign or long dashes.
+const pcPdfText = (s) => pdfText(String(s)).replace(/°/g, "").replace(/[–—]/g, "-");
+
+function makePowerCheckPdf(entry, jpeg, now = new Date()) {
+  const R = pcCompute(pcFromEntry(entry));
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const M = 14, W = 210;
+  let y = 16;
+  const t = (s, x, yy, o) => doc.text(pcPdfText(s), x, yy, o);
+  doc.setFont("courier", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(0, 130, 60);
+  t("POWER ASSURANCE CHECK - HOVER", M, y);
+  y += 5;
+  doc.setFont("courier", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(90, 90, 90);
+  t("AW169 RFM 169F0290X001 SUPP 3, FIG S3-13 P&WC 210A HOVER POWER CHECK - EAPS OFF", M, y);
+  y += 8;
+  doc.setTextColor(20, 20, 20);
+  doc.setFont("courier", "bold");
+  doc.setFontSize(10.5);
+  t(`${entry.acReg || "-"}   SRP ${entry.srp || "-"}   ${entry.dateZ || "-"}   ${entry.timeZ || "--:--"}Z   ${entry.site || ""}`, M, y);
+  y += 6;
+  doc.setFont("courier", "normal");
+  doc.setFontSize(9.5);
+  const c = R.c && !R.c.error ? R.c : null;
+  t(
+    c && c.paSource === "PFD"
+      ? `OAT ${entry.oat} C   PRESS ALT ${Math.round(c.pa)} FT (PFD, 1013 SET)`
+      : `OAT ${entry.oat || "-"} C   QNH ${entry.qnh || "-"} HPA   ELEV ${entry.elev || "-"} FT   PRESS ALT ${c ? Math.round(c.pa) + " FT (FROM QNH)" : "-"}`,
+    M,
+    y
+  );
+  y += 9;
+  doc.setFont("courier", "bold");
+  doc.setFontSize(9);
+  const cols = [M, M + 14, M + 38, M + 56, M + 72, M + 88, M + 108, M + 126, M + 143];
+  ["ENG", "READING", "TQ %", "ITT", "MAX", "PAM", "NG %", "MAX", "PAM"].forEach((h, k) => t(h, cols[k], y));
+  y += 1.5;
+  doc.setDrawColor(150);
+  doc.setLineWidth(0.2);
+  doc.line(M, y, W - M, y);
+  y += 4.5;
+  doc.setFont("courier", "normal");
+  const line = (eng, label, r) => {
+    const v =
+      r && !r.error
+        ? [eng, label, r.tq.toFixed(1), r.itt, r.maxItt, pcSgnA(r.ittMargin, 0), r.ng.toFixed(1), r.maxNg.toFixed(1), pcSgnA(r.ngMargin, 1)]
+        : [eng, label, r ? r.error : "INCOMPLETE"];
+    v.forEach((s, k) => t(s, cols[k], y));
+    y += 5;
+  };
+  R.eng.forEach((E, i) => {
+    line(String(i + 1), "1-MIN", E.first);
+    if (entry.eng[i].rep) line("", "3-MIN", E.rep);
+  });
+  y += 2;
+  doc.setFont("courier", "bold");
+  R.eng.forEach((E, i) => {
+    t(`ENG ${i + 1}: ${PC_PDF_STATE[E.state]}`, M, y);
+    y += 5;
+  });
+  doc.setFont("courier", "normal");
+  const anyX = entry.eng.some((e) => parseNum(e.xItt) !== null || parseNum(e.xNg) !== null);
+  if (anyX) {
+    y += 2;
+    doc.setFont("courier", "bold");
+    t("CROSS-CHECK: OTHER APP (THIS APP - OTHER APP)", M, y);
+    y += 5;
+    doc.setFont("courier", "normal");
+    R.eng.forEach((E, i) => {
+      const xi = parseNum(entry.eng[i].xItt), xn = parseNum(entry.eng[i].xNg), F = E.final;
+      if (xi === null && xn === null) return;
+      const ok = F && !F.error;
+      const di = ok && xi !== null ? pcSgnA(F.maxItt - xi, 0) : "-";
+      const dn = ok && xn !== null ? pcSgnA(Math.round((F.maxNg - xn) * 10) / 10, 1) : "-";
+      t(`ENG ${i + 1}: MAX ITT ${xi ?? "-"} (DIFF ${di})   MAX NG ${xn !== null ? xn.toFixed(1) : "-"} (DIFF ${dn})`, M, y);
+      y += 5;
+    });
+  }
+  // The RFM page image at full text width, the readings drawn over it.
+  const cw = W - 2 * M, k = cw / PC_IMAGE.w, chh = PC_IMAGE.h * k;
+  y += 3;
+  if (y + chh + 34 > 290) {
+    doc.addPage();
+    y = 16;
+  }
+  const oy = y, P = (u, v) => [M + u * k, oy + v * k];
+  if (jpeg) doc.addImage(jpeg, "JPEG", M, oy, cw, chh);
+  else {
+    doc.setDrawColor(150);
+    doc.setFillColor(225, 228, 232);
+    doc.rect(M, oy, cw, chh, "FD");
+    doc.setFontSize(9);
+    doc.setTextColor(90, 90, 90);
+    t("RFM CHART IMAGE NOT SAVED ON THIS PHONE YET - OPEN ONCE WITH SIGNAL", M + 4, oy + 8);
+  }
+  R.eng.forEach((E, i) => {
+    const r = E.final;
+    if (!r || r.error) return;
+    const { col, dash } = PC_ENG_STYLE[i];
+    const rgb = [1, 3, 5].map((j) => parseInt(col.slice(j, j + 2), 16));
+    doc.setDrawColor(...rgb);
+    doc.setLineWidth(0.4);
+    if (dash) doc.setLineDashPattern(dash.map((d) => d * k), 0);
+    const { xt, y: yy, xi, xn, yb } = pcPath(r);
+    doc.line(...P(xt, yb), ...P(xt, yy));
+    doc.line(...P(xt, yy), ...P(xn, yy));
+    doc.line(...P(xi, yy), ...P(xi, yb));
+    doc.line(...P(xn, yy), ...P(xn, yb));
+    doc.setLineDashPattern([], 0);
+    for (const cx of [xt, xi, xn]) doc.circle(...P(cx, yy), 7 * k, "S");
+  });
+  y = oy + chh + 6;
+  doc.setFontSize(7.5);
+  doc.setTextColor(90, 90, 90);
+  t("ENG 1 RED, ENG 2 MAGENTA DASHED, DRAWN OVER RFM SUPP 3 PAGE S3-32 FIG S3-13.", M, y);
+  y += 8;
+  doc.setTextColor(20, 20, 20);
+  doc.setFontSize(9.5);
+  t("PIC ______________________________", M, y);
+  y += 9;
+  doc.setFontSize(7);
+  doc.setTextColor(110, 110, 110);
+  const z = nowZulu(now);
+  [
+    `CALCULATED BY DAILY FLIGHT CARD ${APP_VERSION}. PERSONAL TRIAL - THE COMPANY POWER CHECK METHOD GOVERNS.`,
+    "MAX ITT / NG READ FROM FIG S3-13 ONLY, ROUNDED DOWN. NO EXTRAPOLATION BEYOND THE CHART.",
+    "PAM = MAX - INDICATED. 1-MIN: PAM MUST BE POSITIVE. 3-MIN REPEAT: ZERO OR POSITIVE (RFM SUPP 3 STEPS 11-12).",
+    `GENERATED ${z.date} ${z.time}Z.`,
+  ].forEach((s) => {
+    t(s, M, y);
+    y += 3.6;
+  });
+  return doc;
+}
+const pcPdfName = (entry) =>
+  `PC_${(entry.acReg || "AC").replace(/[^A-Z0-9-]/gi, "")}_${String(entry.dateZ || "").replace(/[^0-9.]/g, "")}_${String(entry.timeZ || "").replace(/[^0-9]/g, "")}Z.pdf`;
+
+// Same sharing as the card PDF: the share sheet, or a download where there is none.
+async function shareDocPdf(doc, name) {
+  const subject = name.replace(/\.pdf$/, "");
+  const blob = doc.output("blob");
+  const file = new File([blob], name, { type: "application/pdf" });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    await navigator.share({ files: [file], title: subject, text: subject });
+  } else {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+}
+
+function PowerCheck({ active, ctx, cardInfo, onRecord, onCancel }) {
+  const infoRef = useRef(cardInfo);
+  infoRef.current = cardInfo;
+  const [st, setSt] = useState(() => pcBlank(cardInfo));
+  const [img, setImg] = useState("unknown"); // "ok" | "missing" | "unknown" (not tried yet)
+  const [exporting, setExporting] = useState(false);
+  const row = ctx ? ctx.row : null;
+
+  // A new context (ground run YES, A/C DATA button, a tapped entry, or the tab bar with none):
+  // load that row's v2 entry for editing, or start a fresh check timed now (UTC).
+  // Legacy entries are never loaded — a fresh check replaces them on RECORD.
+  useEffect(() => {
+    if (!ctx) return;
+    const info = infoRef.current || {};
+    const ex = (info.powerChecks || []).find((p) => p && p.v === 2 && p.row === ctx.row);
+    setSt(ex ? pcFromEntry(ex) : pcBlank(info));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctx && ctx.seq]);
+
+  // The RFM image is only asked for when this tab is open (no network use anywhere else).
+  useEffect(() => {
+    if (!active || img === "ok") return;
+    let live = true;
+    loadRfmImage().then((b) => live && setImg(b ? "ok" : "missing"));
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+
+  const R = useMemo(() => pcCompute(st), [st]);
+  const set = (patch) => setSt((s) => ({ ...s, ...patch }));
+  const setEng = (i, patch, rep) =>
+    setSt((s) => ({
+      ...s,
+      eng: s.eng.map((e, k) => (k !== i ? e : rep ? { ...e, rep: { ...e.rep, ...patch } } : { ...e, ...patch })),
+    }));
+
+  const smallLab = { ...label(), fontSize: 9, marginBottom: 3, letterSpacing: "0.1em" };
+  const signBtn = (neg, onFlip, what) => (
+    <button
+      type="button"
+      onClick={onFlip}
+      aria-label={`toggle ${what} sign`}
+      style={{
+        background: "transparent",
+        border: `1px solid ${C.edge}`,
+        borderRadius: 4,
+        color: neg ? C.amber : C.grey,
+        fontFamily: mono,
+        fontSize: 13,
+        fontWeight: 600,
+        padding: "1px 6px",
+        marginLeft: 4,
+        cursor: "pointer",
+        flex: "none",
+      }}
+    >
+      ±
+    </button>
+  );
+  // One input. kind: SAN kind, or "text" (free, uppercase). sign: number pad + ± button (iOS has no minus key).
+  const fld = (key, lab, value, onChange, kind, opts = {}) => {
+    const neg = String(value).startsWith("-");
+    const clean = (v) => (kind === "text" ? v.toUpperCase() : (opts.sign && neg ? "-" : "") + SAN[kind](v));
+    return (
+      <label key={key} style={{ display: "block", minWidth: 0, ...(opts.span ? { gridColumn: `span ${opts.span}` } : {}) }}>
+        <span style={smallLab}>{lab}</span>
+        <div style={{ ...inputWell(), padding: "7px 8px", alignItems: "center" }}>
+          <input
+            data-pc={key}
+            value={value}
+            placeholder={opts.placeholder || ""}
+            inputMode={kind === "text" ? "text" : KIND_MODE[kind]}
+            autoComplete="off"
+            autoCapitalize={kind === "text" ? "characters" : undefined}
+            onChange={(e) => onChange(clean(e.target.value))}
+            style={inputStyle(16)}
+          />
+          {opts.sign && signBtn(neg, () => onChange(neg ? String(value).slice(1) : "-" + value), opts.sign)}
+        </div>
+      </label>
+    );
+  };
+
+  const card = (children, extra = {}) => (
+    <div style={{ border: `1px solid ${C.edge}`, borderRadius: 8, padding: 12, marginBottom: 12, ...extra }}>{children}</div>
+  );
+  const head = (txt) => (
+    <div style={{ color: C.green, fontFamily: mono, fontSize: 11, fontWeight: 600, letterSpacing: "0.15em", marginBottom: 10 }}>{txt}</div>
+  );
+  const msg = (tone, txt, attrs = {}) => (
+    <div {...attrs} style={{ color: pcTone(tone), fontFamily: mono, fontSize: 10.5, letterSpacing: "0.04em", lineHeight: 1.5, marginTop: 6 }}>
+      {txt}
+    </div>
+  );
+  const grid = (cols, children, extra = {}) => (
+    <div style={{ display: "grid", gridTemplateColumns: cols, gap: 8, ...extra }}>{children}</div>
+  );
+
+  // MAX · PAM lines for one reading (1-minute: PAM must be > 0; repeat: ≥ 0 is acceptable).
+  const readingLines = (r, isRep, attr) => {
+    const box = { marginTop: 10, borderTop: `1px solid ${C.edge}`, paddingTop: 8, fontFamily: mono, fontSize: 12, lineHeight: 1.7 };
+    if (!r) return <div data-pc-res={attr} style={{ ...box, color: C.grey }}>—</div>;
+    if (r.error) return <div data-pc-res={attr} style={{ ...box, color: C.amber, fontSize: 10.5 }}>{r.error}</div>;
+    const okI = isRep ? r.ittMargin >= 0 : r.ittMargin > 0;
+    const okN = isRep ? r.ngMargin >= 0 : r.ngMargin > 0;
+    // Label above the figures: two engine columns at 375px leave no room for both on one line.
+    const rowS = { display: "flex", flexDirection: "column" };
+    return (
+      <div data-pc-res={attr} style={box}>
+        <div style={rowS}>
+          <span style={{ color: C.grey, fontSize: 9.5 }}>MAX ITT · PAM</span>
+          <span style={{ color: C.white, whiteSpace: "nowrap" }}>
+            {r.maxItt} <span data-pc-pam="itt" style={{ color: okI ? C.green : C.red }}>{pcSgn(r.ittMargin, 0)}</span>
+          </span>
+        </div>
+        <div style={rowS}>
+          <span style={{ color: C.grey, fontSize: 9.5 }}>MAX NG · PAM</span>
+          <span style={{ color: C.white, whiteSpace: "nowrap" }}>
+            {r.maxNg.toFixed(1)} <span data-pc-pam="ng" style={{ color: okN ? C.green : C.red }}>{pcSgn(r.ngMargin, 1)}</span>
+          </span>
+        </div>
+        {r.overLimit && msg("bad", "ABOVE CHART LIMIT: 930 °C ITT / 98.2 % NG", { "data-pc-overlimit": "" })}
+        {r.tq < PC_TQ_COMPANY_MIN && msg("warn", "TQ BELOW 92 % COMPANY MINIMUM", { "data-pc-lowtq": "" })}
+      </div>
+    );
+  };
+
+  const engineBox = (i) => {
+    const e = st.eng[i], E = R.eng[i];
+    const s = PC_STATE_TEXT[E.state];
+    return (
+      <div key={i} data-pc-eng={i} style={{ border: `1px solid ${C.edge}`, borderRadius: 6, padding: 8, minWidth: 0 }}>
+        <div style={{ color: C.white, fontFamily: mono, fontSize: 11, letterSpacing: "0.12em", marginBottom: 8 }}>ENG {i + 1}</div>
+        {grid("minmax(0,1fr)", [
+          fld(`e${i}tq`, "TQ %", e.tq, (v) => setEng(i, { tq: v }), "dec"),
+          fld(`e${i}itt`, "ITT °C", e.itt, (v) => setEng(i, { itt: v }), "int"),
+          fld(`e${i}ng`, "NG %", e.ng, (v) => setEng(i, { ng: v }), "dec"),
+        ])}
+        {readingLines(E.first, false, `${i}-first`)}
+        {e.rep && (
+          <div data-pc-repblock={i} style={{ marginTop: 10, borderTop: `1px solid ${C.edge}`, paddingTop: 8 }}>
+            <div style={{ color: C.amber, fontFamily: mono, fontSize: 11, letterSpacing: "0.12em", marginBottom: 8 }}>3-MIN REPEAT</div>
+            {grid("minmax(0,1fr)", [
+              fld(`e${i}rtq`, "TQ %", e.rep.tq, (v) => setEng(i, { tq: v }, true), "dec"),
+              fld(`e${i}ritt`, "ITT °C", e.rep.itt, (v) => setEng(i, { itt: v }, true), "int"),
+              fld(`e${i}rng`, "NG %", e.rep.ng, (v) => setEng(i, { ng: v }, true), "dec"),
+            ])}
+            {readingLines(E.rep, true, `${i}-rep`)}
+            <button
+              type="button"
+              data-pc-removerep={i}
+              onClick={() => setEng(i, { rep: null })}
+              style={{ ...miniBtn(C.grey), marginTop: 8, padding: "6px 8px", fontSize: 10 }}
+            >
+              REMOVE REPEAT
+            </button>
+          </div>
+        )}
+        {s && msg(s[0], s[1], { "data-pc-state": i })}
+        {E.state === "repeat" && (
+          <button
+            type="button"
+            data-pc-addrep={i}
+            onClick={() => setEng(i, { rep: { tq: e.tq, itt: "", ng: "" } })}
+            style={{ ...miniBtn(C.cyan), marginTop: 8, padding: "6px 8px", fontSize: 10 }}
+          >
+            ENTER 3-MIN REPEAT
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  // Cross-check against another app's max figures, against this app's final rounded maxima.
+  const xcheck = (i) => {
+    const xi = parseNum(st.eng[i].xItt), xn = parseNum(st.eng[i].xNg), F = R.eng[i].final;
+    if ((xi === null && xn === null) || !F || F.error) return null;
+    const parts = [];
+    let agree = true;
+    if (xi !== null) {
+      const d = F.maxItt - xi;
+      parts.push(`ITT ${pcSgn(d, 0)} °C`);
+      if (Math.abs(d) > PC_AGREE.itt) agree = false;
+    }
+    if (xn !== null) {
+      const d = Math.round((F.maxNg - xn) * 10) / 10;
+      parts.push(`NG ${pcSgn(d, 1)} %`);
+      if (Math.abs(d) > PC_AGREE.ng + 1e-9) agree = false;
+    }
+    return (
+      <div data-pc-xres={i} style={{ fontFamily: mono, fontSize: 10.5, lineHeight: 1.5, marginTop: 6 }}>
+        <span style={{ color: agree ? C.green : C.amber }}>
+          {agree ? "AGREES" : "DIFFERS"}: {parts.join(" · ")}
+        </span>
+        <br />
+        <span style={{ color: C.grey }}>THIS APP − OTHER APP</span>
+      </div>
+    );
+  };
+
+  const paLine = !R.c ? (
+    <span>PRESSURE ALT —</span>
+  ) : R.c.error ? (
+    <span style={{ color: C.amber }}>{R.c.error}</span>
+  ) : R.c.paSource === "PFD" ? (
+    <span>
+      USING PRESSURE ALT <b style={{ color: C.white }}>{Math.round(R.c.pa)} FT</b> FROM PFD
+    </span>
+  ) : (
+    <span>
+      PRESSURE ALT <b style={{ color: C.white }}>{Math.round(R.c.pa)} FT</b> FROM QNH + ELEV
+    </span>
+  );
+
+  const exportPdf = async () => {
+    setExporting(true);
+    try {
+      const entry = pcEntry(row, st, R);
+      const jpeg = await loadRfmImage();
+      if (jpeg && img !== "ok") setImg("ok");
+      await shareDocPdf(makePowerCheckPdf(entry, jpeg), pcPdfName(entry));
+    } catch {}
+    setExporting(false);
+  };
+
+  return (
+    <>
+      <PanelHeader title="POWER CHECK" subtitle="HOVER · FIG S3-13 EAPS OFF" />
+      <div
+        data-pc-trial
+        style={{ border: `1px solid ${C.amber}`, color: C.amber, borderRadius: 8, padding: "8px 10px", fontFamily: mono, fontSize: 10.5, lineHeight: 1.5, letterSpacing: "0.04em", marginBottom: 10 }}
+      >
+        PERSONAL TRIAL — THE COMPANY POWER CHECK METHOD GOVERNS.
+      </div>
+      <div data-pc-for style={{ color: C.grey, fontFamily: mono, fontSize: 11, letterSpacing: "0.1em", marginBottom: 12 }}>
+        FOR: <span style={{ color: C.white }}>{row === null ? "THIS SRP" : `FLIGHT ${row + 1}`}</span>
+      </div>
+
+      {card(
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            {head("CHECK")}
+            <button
+              type="button"
+              data-pc-now
+              onClick={() => {
+                const z = nowZulu();
+                set({ dateZ: z.date, timeZ: z.time });
+              }}
+              style={{ ...miniBtn(C.grey), padding: "4px 8px", fontSize: 10, whiteSpace: "nowrap", marginTop: -4 }}
+            >
+              NOW Z
+            </button>
+          </div>
+          {/* SRP numbers run to 7 digits; SITE is a 4-letter ICAO code. */}
+          {grid("minmax(0,1fr) minmax(0,1.15fr) minmax(0,0.75fr)", [
+            fld("acReg", "A/C REG", st.acReg, (v) => set({ acReg: v }), "text"),
+            fld("srp", "SRP", st.srp, (v) => set({ srp: v }), "int"),
+            fld("site", "SITE", st.site, (v) => set({ site: v }), "text"),
+          ])}
+          {grid(
+            // DATE needs ~115 px for DD.MM.YYYY at 16 px; NOW Z sits by the heading to give it room.
+            "minmax(0,1fr) 84px",
+            [
+              fld("dateZ", "DATE", st.dateZ, (v) => set({ dateZ: v }), "date", { placeholder: "DD.MM.YYYY" }),
+              fld("timeZ", "TIME Z", st.timeZ, (v) => set({ timeZ: v }), "time", { placeholder: "HH:MM" }),
+            ],
+            { marginTop: 8 }
+          )}
+        </>
+      )}
+
+      {card(
+        <>
+          {head("CONDITIONS")}
+          {grid("repeat(3, minmax(0,1fr))", [
+            fld("oat", "OAT °C", st.oat, (v) => set({ oat: v }), "dec", { sign: "OAT" }),
+            fld("qnh", "QNH HPA", st.qnh, (v) => set({ qnh: v }), "int"),
+            fld("elev", "ELEV FT", st.elev, (v) => set({ elev: v }), "int"),
+          ])}
+          {grid(
+            "repeat(3, minmax(0,1fr))",
+            [fld("paIn", "OR PRESS ALT FT (PFD, 1013 SET)", st.paIn, (v) => set({ paIn: v }), "int", { sign: "pressure altitude", span: 2, placeholder: "OPTIONAL" })],
+            { marginTop: 8 }
+          )}
+          <div data-pc-pa style={{ color: C.grey, fontFamily: mono, fontSize: 11, letterSpacing: "0.06em", marginTop: 8 }}>
+            {paLine}
+          </div>
+        </>
+      )}
+
+      {grid("minmax(0,1fr) minmax(0,1fr)", [engineBox(0), engineBox(1)], { marginBottom: 12 })}
+
+      {card(
+        <div data-pc-summary style={{ color: pcTone(R.summary[0]), fontFamily: mono, fontSize: 12, fontWeight: 600, letterSpacing: "0.08em", lineHeight: 1.5 }}>
+          {R.summary[1]}
+        </div>
+      )}
+
+      {card(
+        <>
+          {head("CHART")}
+          <div data-pc-chartwrap style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+            <svg
+              data-pc-chart
+              viewBox={`0 0 ${PC_IMAGE.w} ${PC_IMAGE.h}`}
+              width="1000"
+              height={Math.round((1000 * PC_IMAGE.h) / PC_IMAGE.w)}
+              role="img"
+              aria-label="RFM Fig S3-13 with each engine's reading path drawn over it"
+              style={{ display: "block", width: 1000, maxWidth: "none" }}
+            >
+              {img === "missing" ? (
+                <g data-pc-noimg>
+                  <rect x="0" y="0" width={PC_IMAGE.w} height={PC_IMAGE.h} fill={C.inputBg} stroke={C.edge} />
+                  <text x={PC_IMAGE.w / 2} y={PC_IMAGE.h / 2} textAnchor="middle" fill={C.grey} style={{ fontFamily: mono, fontSize: 12, letterSpacing: "0.06em" }}>
+                    RFM CHART IMAGE NOT SAVED ON THIS PHONE YET — OPEN ONCE WITH SIGNAL
+                  </text>
+                </g>
+              ) : (
+                <image data-pc-img href={PC_IMAGE.file} x="0" y="0" width={PC_IMAGE.w} height={PC_IMAGE.h} />
+              )}
+              {R.eng.map((E, i) => {
+                const r = E.final;
+                if (!r || r.error) return null;
+                const { col, dash } = PC_ENG_STYLE[i];
+                const p = pcPath(r);
+                const f = (v) => +v.toFixed(2);
+                return (
+                  <g key={i} data-pc-path={i}>
+                    <path
+                      d={`M${f(p.xt)},${f(p.yb)}L${f(p.xt)},${f(p.y)}L${f(p.xn)},${f(p.y)}M${f(p.xi)},${f(p.y)}L${f(p.xi)},${f(p.yb)}M${f(p.xn)},${f(p.y)}L${f(p.xn)},${f(p.yb)}`}
+                      fill="none"
+                      stroke={col}
+                      strokeWidth="1.6"
+                      strokeDasharray={dash ? dash.join(" ") : undefined}
+                    />
+                    {[p.xt, p.xi, p.xn].map((cx, k) => (
+                      <g key={k}>
+                        <circle cx={f(cx)} cy={f(p.y)} r="7" fill="none" stroke={col} strokeWidth="1.6" />
+                        <circle cx={f(cx)} cy={f(p.y)} r="1.6" fill={col} />
+                      </g>
+                    ))}
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+          <div style={{ color: C.grey, fontFamily: mono, fontSize: 10, lineHeight: 1.5, letterSpacing: "0.04em", marginTop: 6 }}>
+            RFM Supp 3 page S3-32 (Fig S3-13), with the readings drawn over it. ENG 1 red, ENG 2 magenta dashed. Scrolls sideways.
+          </div>
+        </>
+      )}
+
+      {card(
+        <>
+          {head("CROSS-CHECK: OTHER APP (OPTIONAL)")}
+          {grid(
+            "minmax(0,1fr) minmax(0,1fr)",
+            [0, 1].map((i) => (
+              <div key={i} style={{ border: `1px solid ${C.edge}`, borderRadius: 6, padding: 8, minWidth: 0 }}>
+                <div style={{ color: C.white, fontFamily: mono, fontSize: 11, letterSpacing: "0.12em", marginBottom: 8 }}>ENG {i + 1}</div>
+                {grid("minmax(0,1fr)", [
+                  fld(`x${i}itt`, "MAX ITT °C", st.eng[i].xItt, (v) => setEng(i, { xItt: v }), "int"),
+                  fld(`x${i}ng`, "MAX NG %", st.eng[i].xNg, (v) => setEng(i, { xNg: v }), "dec"),
+                ])}
+                {xcheck(i)}
+              </div>
+            ))
+          )}
+        </>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <button
+          type="button"
+          data-pc-record
+          disabled={!R.complete}
+          onClick={() => R.complete && onRecord(pcEntry(row, st, R))}
+          style={{ ...btnStyle(R.complete ? C.green : C.grey), opacity: R.complete ? 1 : 0.5 }}
+        >
+          RECORD ON CARD
+        </button>
+        <button type="button" data-pc-export onClick={exportPdf} disabled={exporting} style={btnStyle(C.cyan)}>
+          {exporting ? "EXPORTING…" : "EXPORT POWER CHECK PDF"}
+        </button>
+        <button type="button" data-pc-cancel onClick={onCancel} style={btnStyle(C.grey)}>
+          CANCEL
+        </button>
+      </div>
+
+      <p style={{ marginTop: 16, marginBottom: 0, color: C.grey, fontSize: 10, lineHeight: 1.6, fontFamily: mono }}>
+        PAM = max − indicated. 1-minute check: both PAMs must be positive. 3-minute repeat: zero or positive is acceptable (RFM Supp 3
+        steps 11–12). Max ITT and NG are read from Fig S3-13 only and rounded down; the chart is never extended.
+      </p>
+    </>
+  );
+}
+
 function App() {
   const [tab, setTab] = useState("card");
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "night");
@@ -2912,9 +3650,12 @@ function App() {
   const [density, setDensity] = useState("0.79");
   const [sourceRow, setSourceRow] = useState(null);
   const [pendingUplift, setPendingUplift] = useState(null);
-  // false = panel closed; null = SRP-level check; number = flight index
-  const [powerCheckRow, setPowerCheckRow] = useState(false);
+  // PWR CHK context: null = none open; {row: null (SRP-level) | flight index, seq}. seq makes every
+  // start a fresh load (or reload of that row's v2 entry) even for the same row.
+  const [pwrCtx, setPwrCtx] = useState(null);
+  const pwrSeq = useRef(0);
   const [pendingPowerCheck, setPendingPowerCheck] = useState(null);
+  const [cardInfo, setCardInfo] = useState({ acReg: "", srp: "", powerChecks: [] });
 
   const handleRefuel = (fuelKg, rowIndex) => {
     setCurrent(String(fuelKg).trim());
@@ -2928,20 +3669,30 @@ function App() {
     setTab("card");
   };
 
+  // Ground run YES, the FLIGHTS / A/C DATA power check buttons, or a tapped entry.
   const handlePowerCheckStart = (rowIndex) => {
-    setPowerCheckRow(rowIndex); // may be null (SRP-level)
-    setTab("uplift");
+    pwrSeq.current += 1;
+    setPwrCtx({ row: rowIndex, seq: pwrSeq.current }); // row may be null (SRP-level)
+    setTab("pwr");
   };
 
-  const handlePowerCheckConfirm = (pc) => {
-    setPendingPowerCheck({ row: powerCheckRow, ...pc });
-    setTab(powerCheckRow === null ? "ac" : "card");
-    setPowerCheckRow(false);
+  // RECORD ON CARD: the v2 entry goes through the existing pendingPowerCheck path; back to the
+  // tab it came from (A/C DATA for SRP-level, FLIGHTS for a flight).
+  const handlePowerCheckRecord = (entry) => {
+    setPendingPowerCheck(entry);
+    setTab(entry.row === null ? "ac" : "card");
+    setPwrCtx(null);
   };
 
   const handlePowerCheckCancel = () => {
-    setTab(powerCheckRow === null ? "ac" : "card");
-    setPowerCheckRow(false);
+    setTab(pwrCtx && pwrCtx.row !== null ? "card" : "ac");
+    setPwrCtx(null);
+  };
+
+  // The tab bar opens PWR CHK as it was left; with no check open, as an SRP-level check.
+  const openTab = (id) => {
+    if (id === "pwr" && !pwrCtx) handlePowerCheckStart(null);
+    else setTab(id);
   };
 
   const setCurrentManual = (v) => {
@@ -2951,22 +3702,23 @@ function App() {
 
   const tabBtn = (id, text) => (
     <button
-      onClick={() => setTab(id)}
+      onClick={() => openTab(id)}
       style={{
-        flex: 1,
+        flex: "1 1 auto",
         background: tab === id ? C.panel : "transparent",
         border: `1px solid ${tab === id ? C.edge : "transparent"}`,
         borderRadius: 8,
         color: tab === id ? C.cyan : C.grey,
         fontFamily: mono,
-        // Four tabs + theme toggle must share one row at 375px: slightly tighter
-        // than the original three-tab bar, and never wrapping to two lines.
-        fontSize: 11,
+        // Five tabs + theme toggle must share one row at 375px: tabs size to their label
+        // (flex 1 1 auto, 4px side padding, 6px gaps, 36px toggle) and never wrap or clip.
+        // 11px / 0.05em overflowed by 1-3px at 375px (measured), so 10.5px / 0.03em.
+        fontSize: 10.5,
         fontWeight: 600,
-        letterSpacing: "0.05em",
+        letterSpacing: "0.03em",
         whiteSpace: "nowrap",
         minWidth: 0,
-        padding: "12px 0",
+        padding: "12px 4px",
         cursor: "pointer",
       }}
     >
@@ -3002,16 +3754,18 @@ function App() {
       `}</style>
 
       <div className="shell-scale" style={{ width: "100%", maxWidth: 460 }}>
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <div data-tabbar style={{ display: "flex", gap: 6, marginBottom: 12 }}>
           {tabBtn("ac", "A/C DATA")}
           {tabBtn("card", "FLIGHTS")}
           {tabBtn("uplift", "UPLIFT")}
+          {tabBtn("pwr", "PWR CHK")}
           {tabBtn("ifr", "IFR FUEL")}
           <button
             onClick={toggleTheme}
             aria-label="toggle day/night mode"
             style={{
-              width: 46,
+              width: 36,
+              flex: "none",
               background: "transparent",
               border: `1px solid ${C.edge}`,
               borderRadius: 8,
@@ -3045,6 +3799,7 @@ function App() {
               onPendingApplied={() => setPendingUplift(null)}
               pendingPowerCheck={pendingPowerCheck}
               onPowerCheckApplied={() => setPendingPowerCheck(null)}
+              onCardInfo={setCardInfo}
             />
           </div>
           <div style={{ display: tab === "uplift" ? "block" : "none" }}>
@@ -3057,9 +3812,15 @@ function App() {
               setDensity={setDensity}
               sourceRow={sourceRow}
               onConfirm={handleConfirm}
-              powerCheckRow={powerCheckRow}
-              onPowerCheckConfirm={handlePowerCheckConfirm}
-              onPowerCheckCancel={handlePowerCheckCancel}
+            />
+          </div>
+          <div style={{ display: tab === "pwr" ? "block" : "none" }}>
+            <PowerCheck
+              active={tab === "pwr"}
+              ctx={pwrCtx}
+              cardInfo={cardInfo}
+              onRecord={handlePowerCheckRecord}
+              onCancel={handlePowerCheckCancel}
             />
           </div>
           <div style={{ display: tab === "ifr" ? "block" : "none" }}>

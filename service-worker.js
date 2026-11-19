@@ -13,7 +13,7 @@
  *  - Never throws into the page: every network failure falls back to the cache, and if
  *    nothing is cached either, a small plain offline notice is served.
  */
-const BUILD_STAMP = "20261119-2aef8bc654";
+const BUILD_STAMP = "20261119-9d85c95f00";
 const CACHE = "flightcard-" + BUILD_STAMP;
 // Web fonts (IBM Plex Mono) are kept across deploys so the offline app looks and measures
 // exactly as it does online (layouts such as the one-line flight-row margins depend on it).
@@ -24,6 +24,11 @@ const FONT_HOSTS = ["fonts.googleapis.com", "fonts.gstatic.com"];
 // crew-guide-v2.pdf — bump GUIDE and GUIDE_CACHE together (and GUIDE_URL in app.jsx).
 const GUIDE = "./crew-guide-v1.pdf";
 const GUIDE_CACHE = "flightcard-guide-v1"; // bump together with GUIDE
+// The RFM power check chart (Fig S3-13 page image, ~0.6 MB) for the PWR CHK tab: same pattern as
+// the guide — own cache kept across deploys, immutable under its name. A new RFM figure is
+// rfm-fig-s3-13-v2.jpg: bump RFM_IMG and ASSET_CACHE together (and PC_IMAGE in powercheck.js).
+const RFM_IMG = "./assets/rfm-fig-s3-13-v1.jpg";
+const ASSET_CACHE = "flightcard-assets-v1"; // bump together with RFM_IMG
 const NAV_TIMEOUT_MS = 3000;
 
 const SCOPE = self.registration.scope; // e.g. https://vontedworth.github.io/Daily-Flight-Card/
@@ -41,6 +46,11 @@ self.addEventListener("install", (event) => {
       // cache: "reload" bypasses the browser's HTTP cache so the shell is truly this build.
       await cache.addAll(SHELL.map((u) => new Request(abs(u), { cache: "reload" })));
       await Promise.all(OPTIONAL.map((u) => cache.add(new Request(abs(u), { cache: "reload" })).catch(() => {})));
+      // RFM chart image: best effort, after the shell is cached; never fails the install.
+      try {
+        const ac = await caches.open(ASSET_CACHE);
+        if (!(await ac.match(abs(RFM_IMG)))) await ac.add(new Request(abs(RFM_IMG), { cache: "reload" })).catch(() => {});
+      } catch {}
       // Crew guide: best effort, after the shell is cached; never fails the install.
       try {
         const gc = await caches.open(GUIDE_CACHE);
@@ -54,7 +64,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k !== CACHE && k !== FONT_CACHE && k !== GUIDE_CACHE).map((k) => caches.delete(k)));
+      await Promise.all(keys.filter((k) => k !== CACHE && k !== FONT_CACHE && k !== GUIDE_CACHE && k !== ASSET_CACHE).map((k) => caches.delete(k)));
       await self.clients.claim(); // control open pages for future fetches — no reload, no message
     })()
   );
@@ -76,6 +86,8 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(navigation(event));
   } else if (url.href === abs(GUIDE)) {
     event.respondWith(guideResponse(event));
+  } else if (url.href === abs(RFM_IMG)) {
+    event.respondWith(assetResponse(event, ASSET_CACHE, abs(RFM_IMG)));
   } else if (url.href.startsWith(SCOPE)) {
     event.respondWith(cacheFirst(event, CACHE, false));
   } else if (FONT_HOSTS.includes(url.hostname)) {
@@ -166,6 +178,26 @@ async function guideResponse(event) {
     if (resp) return resp;
   } catch {}
   return guideOffline();
+}
+
+// RFM chart image: cache first, no background refresh (immutable under its name). Not cached
+// yet: network, stored if OK. Neither: an empty 503 — the app then shows "not saved yet".
+async function assetResponse(event, cacheName, key) {
+  let cache = null;
+  try {
+    cache = await caches.open(cacheName);
+    const hit = await cache.match(key);
+    if (hit) return hit;
+  } catch {}
+  try {
+    const resp = await fetch(event.request);
+    if (resp && resp.ok && cache) {
+      const copy = resp.clone();
+      event.waitUntil(cache.put(key, copy).catch(() => {}));
+    }
+    if (resp) return resp;
+  } catch {}
+  return new Response("", { status: 503, headers: { "Content-Type": "text/plain" } });
 }
 
 function guideOffline() {

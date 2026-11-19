@@ -8,7 +8,7 @@ A self-contained web app (single `index.html`, no server, no accounts) replacing
 
 One card = **one SRP page** (seven sectors). Several cards per day is normal; see §4 (carry-over).
 
-The app has four tabs: **A/C DATA** (once-per-SRP setup and admin), **FLIGHTS** (the seven sector rows), **UPLIFT** (fuel calculator), **IFR FUEL** (multi-sector IFR fuel cross-check, §3A). It auto-scales by device: iPhone 1×, iPad mini ≈1.35×, iPad ≈1.55×.
+The app has five tabs: **A/C DATA** (once-per-SRP setup and admin), **FLIGHTS** (the seven sector rows), **UPLIFT** (fuel calculator), **PWR CHK** (hover power assurance check, §3B), **IFR FUEL** (multi-sector IFR fuel cross-check, §3A). It auto-scales by device: iPhone 1×, iPad mini ≈1.35×, iPad ≈1.55×.
 
 ---
 
@@ -43,7 +43,7 @@ VAR TOW and VERT TOW are independent limits from the same performance calculatio
 
 ### 1.3 Power check (once per card)
 
-Required once per SRP / 10 flight hours / 24 hours → recorded **once per card**, REDO to overwrite. Triggered by the POWER CHECK button here, or by answering the prompt after a 0-minute (ground run) entry on a flight row. Records OAT (°C — number pad with a **±** button to flip sign, since the iOS pad has no minus key), QNH (hPa), N1 % and ITT °C for both engines; all six required. Recorded verbatim, no computation; prints on the PDF. Entry from a flight row returns you to FLIGHTS; entry from the button returns here.
+Required once per SRP / 10 flight hours / 24 hours → recorded **once per card**, REDO to overwrite. Triggered by the POWER CHECK button here, or by answering the prompt after a 0-minute (ground run) entry on a flight row; both open the **PWR CHK** tab (§3B). **RECORD ON CARD** there returns you to FLIGHTS (from a flight row) or here (from the button). The recorded check is listed here in four lines — `SRP POWER CHECK · 09:29Z · PA 695 FT · OAT 12°C`, `ENG1 TQ 95 ITT 745/775 (+30) NG 89.7/91.5 (+1.8)`, the ENG2 equivalent, and the result — green when both engines are within limits, amber when a repeat is outstanding, red when a PAM is still negative on the repeat. Tap it to reopen it; ✕ removes it. Checks recorded before v20 (OAT, QNH, N1 and ITT only) keep their original two-line display and PDF line.
 
 ### 1.4 MISC, previous cards, new card
 
@@ -140,6 +140,18 @@ UPLIFT L  = UPLIFT KG ÷ DENSITY
 **Example:** required 650, on board 300, density 0.79 → 350 kg → **443 L**. Inline row refuel is the same formula with REQUIRED = planned and CURRENT = that row's landed fuel; result never goes negative.
 
 **README link.** The bottom of the UPLIFT tab (the shortest tab) carries **README — HOW THE APP WORKS ↗**, which opens this guide on GitHub in a new tab. It needs signal; the app itself does not.
+
+---
+
+## 3B. PWR CHK tab — hover power assurance check (personal trial)
+
+**PWR CHK** works the AW169 hover power assurance check from RFM 169F0290X001 Supplement 3, **Fig S3-13 (P&WC 210A, EAPS OFF)**. Enter OAT, QNH and elevation (default 222 ft; pressure altitude by the ISA formula), or the PFD pressure altitude with 1013 set, which then takes priority. Then enter TQ, ITT and NG for each engine. For each engine the app reads **max allowable ITT and NG** off the chart, rounding down (whole °C, 0.1 %), and never extends the chart beyond its lines. It shows the **PAM** (power assurance margin = max − indicated) and the RFM result:
+
+- **1-minute reading:** both PAMs must be **positive** → WITHIN LIMITS.
+- Otherwise, **repeat holding a fixed collective for 3 minutes**, where **zero or positive** is acceptable.
+- Still negative on the repeat → *RFM performance may not be achieved, refer to MM*.
+
+Each engine's reading path is drawn over the actual RFM page (ENG 1 red, ENG 2 magenta dashed), which is saved on the phone for use with no signal. An optional cross-check compares another app's max figures (agrees within 2 °C / 0.1 % — a trial threshold, not an RFM figure). **EXPORT POWER CHECK PDF** produces a one-page record, `PC_<REG>_<DD.MM.YYYY>_<HHMM>Z.pdf`, with the RFM page and a PIC signature line; the card PDF prints a compact version of the recorded check. **This is a personal trial — the company power check method governs.**
 
 ---
 

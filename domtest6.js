@@ -37,14 +37,14 @@ const setter = () => Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototyp
   await sleep(200);
   check("AVAILABLE shows 9:34", d.getElementById("root").textContent.includes("9:34"));
 
-  // open power check panel → OAT numeric + ± toggle
+  // POWER CHECK button → PWR CHK tab (v20) → OAT on the number pad + ± toggle (no minus key on iOS)
   const pcBtn = [...d.querySelectorAll("button")].find((b) => b.textContent.trim() === "POWER CHECK");
   pcBtn.dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
   await sleep(400);
-  const pm = [...d.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "toggle temperature sign");
+  const pm = [...d.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "toggle OAT sign");
   check("± toggle exists", !!pm);
   const oatInput = pm && pm.parentElement.querySelector("input");
-  check("OAT numeric pad", oatInput && oatInput.getAttribute("inputmode") === "numeric");
+  check("OAT number pad (decimal)", oatInput && oatInput.getAttribute("data-pc") === "oat" && oatInput.getAttribute("inputmode") === "decimal");
   setter().call(oatInput, "15"); oatInput.dispatchEvent(new w.Event("input", { bubbles: true })); await sleep(50);
   pm.dispatchEvent(new w.MouseEvent("click", { bubbles: true })); await sleep(100);
   check("sign flips to -15", oatInput.value === "-15");

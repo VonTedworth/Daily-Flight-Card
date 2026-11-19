@@ -31,6 +31,10 @@ crew relies on.
 - `src/service-worker.src.js` — the service worker TEMPLATE. `build_html.py` stamps it and
   writes `service-worker.js` (repo root) — never edit the built copy. `build_html.py` also
   generates `manifest.json` (same icon as the apple-touch-icon).
+- `src/powercheck.js` + `assets/rfm-fig-s3-13-v1.jpg` — the PWR CHK calculator and the RFM page image
+  (see "Power check" below). Delivered files: never edit, re-encode or regenerate them.
+- `test-fixtures/` — the v19 card PDF for a card with pre-v20 power checks (domtest26 proves
+  legacy entries still print byte-for-byte the same).
 - `build/` — esbuild output (generated)
 
 ## Commands
@@ -82,6 +86,12 @@ should still be bumped every time.
   name/page count in domtest20/21/22 and tools/check_offline_chrome.js, and rebuild. The old
   `flightcard-guide-*` cache is deleted by the activate filter. The README link label
   "README — HOW THE APP WORKS" is quoted in the guide (slides 18 and 33) — don't rename it.
+- RFM chart image (`assets/rfm-fig-s3-13-v1.jpg`, ~0.6 MB) for PWR CHK: same pattern as the guide —
+  own cache `flightcard-assets-v1` (`RFM_IMG` / `ASSET_CACHE`), cached best-effort at install after
+  the shell, kept across deploys, cache-first with no background refresh; not cached + no signal →
+  an empty 503, and the app shows "RFM CHART IMAGE NOT SAVED ON THIS PHONE YET — OPEN ONCE WITH
+  SIGNAL" (the PDF still builds, with a grey box in its place). The app only fetches it while PWR CHK
+  is open (no network use on any other tab).
 - Tests: domtest20 (build artefacts, registration, manifest, the guide file itself), domtest21 (runs the built SW
   against simulated Cache Storage/network). jsdom cannot run a real SW: for a real-browser
   check run `npm run check:offline` (headless Chrome). Final proof is on the phone in
@@ -104,7 +114,8 @@ should still be bumped every time.
   previous card's last landed fuel; post-refuel = planned; else previous
   landed). Ground runs (0 min) are never listed in the "over 4600" SRP note.
 - No per-aircraft weight memory (varies by crew; certified M&B app exists).
-- Power check once per card, six fields, REDO to overwrite.
+- Power check once per card, REDO to overwrite; recording for a row replaces that row's entry. Since
+  v20 it is worked on the PWR CHK tab (see "Power check"); pre-v20 entries are never migrated.
 - Carry-over: SRP +1, AVAILABLE = previous REMAINING.
 - Every feature must be faster than pen and paper; when in doubt, remove.
 - The app must launch with no signal after one online visit (service worker), and an
@@ -123,6 +134,37 @@ should still be bumped every time.
   the dataset (`oma_rules`: gnss_approach_types, alternate_validity,
   profiles_by_destination, multi_sector), not in code. PinS destinations: C/D only
   (IFR); VFR legs allowed anywhere.
+
+## Power check (PWR CHK tab, v20) — personal trial
+- **Source:** AW169 RFM 169F0290X001 Supplement 3, Fig S3-13 "P&WC 210A Hover Power Check Chart -
+  EAPS OFF", page S3-32, Issue 3 Rev 1. `PC_CHART` in `src/powercheck.js` holds the RFM PDF's own
+  vector paths (17 pressure-altitude lines, 10 + 10 OAT lines), extracted from the PDF, not hand-traced.
+  **Do not edit PC_CHART** (or the maths) by hand. The page image is `assets/rfm-fig-s3-13-v1.jpg`
+  (2121 × 1533 px, page S3-32 rotated and cropped; `pcU`/`pcV` map chart points onto it).
+- **Validation:** the same extraction method run on Fig S3-12 (EAPS ON) reproduces the RFM worked
+  example (3000 ft, 0 °C, TQ 91 % → 761.7 °C / 90.20 % against the RFM's 760 / 90.2). domtest25 holds the
+  golden values and imports `src/powercheck.js` itself.
+- **Rounding:** max ITT rounded DOWN to the whole °C, max NG DOWN to 0.1 % (a reading error can only
+  make the check stricter); PAM = rounded max − indicated. Never extrapolates: outside the drawn lines
+  there is no result (an error message instead).
+- **Logic = RFM Supp 3 steps 7, 11, 12 exactly:** 1-minute reading — both PAMs > 0 → WITHIN LIMITS;
+  otherwise repeat holding a fixed collective for 3 min — PAM ≥ 0 → WITHIN LIMITS ON 3-MIN REPEAT;
+  still negative → "PAM STILL NEGATIVE ON 3-MIN REPEAT — RFM PERFORMANCE MAY NOT BE ACHIEVED. REFER TO
+  MM". Advisories that never change the result: above the chart's 930 °C / 98.2 % note; TQ below the
+  92 % company minimum.
+- **Cross-check against another app:** "AGREES" within 2 °C ITT / 0.1 % NG — a trial comparison
+  threshold, NOT an RFM figure (`PC_AGREE`).
+- **Stored entry** `{v: 2, row, acReg, srp, site, dateZ, timeZ, oat, qnh, elev, paIn, eng, result}`:
+  inputs as typed plus a `result` snapshot taken at RECORD, so an archived card never changes if the
+  chart data is ever updated. Entries without `v: 2` (pre-v20) display and print exactly as before
+  (domtest26 compares against `test-fixtures/legacy-card-v19.pdf`).
+- **Personal trial:** the page, the PDF and this note all say the company power check method governs.
+- **When the RFM changes:** get the new figure from the RFM PDF → re-extract its vector paths into a
+  new `PC_CHART` (re-validate against the worked example) → save the new page image as
+  `assets/rfm-fig-s3-13-v2.jpg` → bump TOGETHER `PC_IMAGE.file` (powercheck.js), `RFM_IMG` and
+  `ASSET_CACHE` (`flightcard-assets-v2`, service-worker.src.js) and `PC_CHART_REF` (app.jsx) → update
+  domtest20/21/25/26 and tools/check_offline_chrome.js, then rebuild. The old asset cache is deleted
+  by the activate filter.
 
 ## Decisions log
 - July 2026 — WX/METAR tab investigated and rejected: aviationweather.gov
@@ -187,3 +229,9 @@ should still be bumped every time.
   OUTSTANDING: Ed's iPhone check that the home-screen app's in-app browser sheet opens the guide
   offline (flight mode, app closed and reopened, tap USER GUIDE, Done returns to the card intact).
   If it fails: do not improvise — choose between an in-app slide viewer and accepting "needs signal".
+- 19.11.2026 (v20) — PWR CHK tab: RFM Fig S3-13 hover power assurance check — max ITT/NG, PAM, 3-min
+  repeat logic, readings drawn over the RFM page, power check PDF. Replaces the power check panel on
+  UPLIFT (UPLIFT is fuel only again). Tab bar now five tabs + toggle at 375 px: tabs flex 1 1 auto,
+  padding 12px 4px, gap 6, toggle 36 px, text 10.5 px / 0.03em (11 px measured 1-3 px too wide).
+  New palette colour `red` (PAM failing / exceeds only). The real-Chrome check now runs at 375 px.
+  Personal trial — the company power check method governs.

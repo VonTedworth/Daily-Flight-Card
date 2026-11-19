@@ -13,7 +13,7 @@ const res = [];
 const check = (n, ok) => res.push([n, !!ok]);
 
 function makeWorld(opts = {}) {
-  const net = { mode: "online", body: "BUILD-A", status: 200, delay: 0, guideStatus: 200 };
+  const net = { mode: "online", body: "BUILD-A", status: 200, delay: 0, guideStatus: 200, imgStatus: 200 };
   const log = [];
   const urlOf = (r) => (typeof r === "string" ? r : r.url);
   const strip = (u) => u.split("?")[0];
@@ -22,6 +22,7 @@ function makeWorld(opts = {}) {
     log.push({ url, cache: init.cache || (typeof input === "object" ? input.cache : undefined) });
     if (net.delay) await sleep(net.delay);
     if (net.mode === "offline") throw new TypeError("Failed to fetch");
+    if (url.endsWith("rfm-fig-s3-13-v1.jpg")) return new Response(net.imgStatus === 200 ? "JPEG-RFM" : "not found", { status: net.imgStatus, headers: { "Content-Type": "image/jpeg" } });
     if (url.endsWith("crew-guide-v1.pdf")) return new Response(net.guideStatus === 200 ? "%PDF-GUIDE" : "not found", { status: net.guideStatus, headers: { "Content-Type": "application/pdf" } });
     const body = url.endsWith("manifest.json") ? '{"name":"x"}' : url.includes("fonts.") ? "font-" + net.body : net.body;
     return new Response(body, { status: net.status, headers: { "Content-Type": "text/html" } });
@@ -206,6 +207,40 @@ const nav = (url = SCOPE) => ({ url, method: "GET", mode: "navigate", destinatio
   check("Cache Storage unavailable + no signal: guide notice (503), no throw", r.resp.status === 503);
   r = await G.request({ url: SCOPE + "manifest.json", method: "GET", mode: "no-cors", destination: "manifest" });
   check("other same-origin assets still go through the normal cache-first path", r.intercepted && (await r.resp.text()).includes("name"));
+
+  // ── RFM chart image for PWR CHK (own cache, kept across deploys) ──
+  const IMG_URL = SCOPE + "assets/rfm-fig-s3-13-v1.jpg", ASSETS = "flightcard-assets-v1";
+  const imgReq = () => ({ url: IMG_URL, method: "GET", mode: "no-cors", destination: "image" });
+  const imgFetches = (X) => X.log.filter((l) => l.url === IMG_URL).length;
+  const I = makeWorld();
+  await I.install();
+  check("install caches the RFM image in flightcard-assets-v1 (cache: 'reload'), after the shell",
+    (await I.cached(ASSETS, IMG_URL)) === "JPEG-RFM" && I.log.some((l) => l.url === IMG_URL && l.cache === "reload") && I.log.findIndex((l) => l.url === INDEX) < I.log.findIndex((l) => l.url === IMG_URL));
+  await I.seed("flightcard-assets-v0");
+  await I.activate();
+  check("activate keeps flightcard-assets-v1 (and the guide), drops flightcard-assets-v0", I.store.has(ASSETS) && I.store.has("flightcard-guide-v1") && !I.store.has("flightcard-assets-v0"));
+  const i0 = imgFetches(I);
+  await I.install();
+  check("a deploy (new install) does not download the image again", imgFetches(I) === i0);
+  I.net.mode = "offline";
+  r = await I.request(imgReq());
+  check("image offline: served from its cache", r.intercepted && r.resp.status === 200 && (await r.resp.text()) === "JPEG-RFM");
+  I.net.mode = "online";
+  const i1 = imgFetches(I);
+  r = await I.request(imgReq()); await r.done();
+  check("image cached + online: no background refresh (immutable under its name)", imgFetches(I) === i1);
+  const I2 = makeWorld(); I2.net.imgStatus = 404;
+  let i2ok = true; try { await I2.install(); } catch { i2ok = false; }
+  check("image missing on the server: install still succeeds, image not cached", i2ok && (await I2.cached(CACHE, INDEX)) === "BUILD-A" && (await I2.cached(ASSETS, IMG_URL)) === null);
+  I2.net.imgStatus = 200;
+  r = await I2.request(imgReq()); await r.done();
+  check("image not cached yet + online: fetched and stored", (await r.resp.text()) === "JPEG-RFM" && (await I2.cached(ASSETS, IMG_URL)) === "JPEG-RFM");
+  const I3 = makeWorld(); I3.net.mode = "offline";
+  r = await I3.request(imgReq());
+  check("image not cached + no signal: 503, no throw (the app shows 'not saved yet')", r.resp.status === 503);
+  const I4 = makeWorld({ brokenCaches: true }); I4.net.mode = "offline";
+  r = await I4.request(imgReq());
+  check("Cache Storage unavailable + no signal: 503, no throw", r.resp.status === 503);
 
   let fail = 0;
   for (const [n, ok] of res) { console.log((ok ? "PASS" : "FAIL") + "  " + n); if (!ok) fail++; }

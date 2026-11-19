@@ -88,6 +88,12 @@ check("apple-mobile-web-app standalone meta tags kept", html.includes('name="app
   const ignore = fs.existsSync("./.gitignore") ? fs.readFileSync("./.gitignore", "utf8") : "";
   check("crew guide not excluded by .gitignore", !/(^|\n)\s*(\*\.pdf|crew-guide[^\n]*)\s*(\n|$)/.test(ignore));
 
+  // ── RFM power check chart image (PWR CHK tab): in the repo, and the worker knows it ──
+  check("built service-worker.js names assets/rfm-fig-s3-13-v1.jpg and its cache flightcard-assets-v1", sw.includes('"./assets/rfm-fig-s3-13-v1.jpg"') && sw.includes('"flightcard-assets-v1"'));
+  const jpg = fs.existsSync("./assets/rfm-fig-s3-13-v1.jpg") ? fs.readFileSync("./assets/rfm-fig-s3-13-v1.jpg") : Buffer.alloc(0);
+  check(`assets/rfm-fig-s3-13-v1.jpg in the repo: ${jpg.length} bytes, a JPEG`, jpg.length > 500000 && jpg[0] === 0xff && jpg[1] === 0xd8);
+  check("RFM image not excluded by .gitignore", !/(^|\n)\s*(\*\.jpe?g|assets\/?[^\n]*)\s*(\n|$)/.test(ignore));
+
   let fail2 = 0;
   for (const [n, k] of res) { console.log((k ? "PASS" : "FAIL") + "  " + n); if (!k) fail2++; }
   process.exit(fail2 ? 1 : 0);

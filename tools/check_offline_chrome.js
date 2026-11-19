@@ -5,6 +5,8 @@
 // (page hangs 10 s), a deploy while the app is open (no reload), and the next launch.
 // Also the crew guide PDF: cached once in its own cache, served with no signal, kept (and not
 // re-downloaded) across a deploy, and a calm 503 notice when it was never saved.
+// And the PWR CHK tab (v20): the RFM chart image cached in flightcard-assets-v1, shown and embedded
+// in the power check PDF with no signal, kept across a deploy; the five-tab bar fits at 375 px.
 const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
@@ -22,6 +24,9 @@ fs.mkdirSync(APP, { recursive: true });
 for (const f of ["index.html", "service-worker.js", "manifest.json", "crew-guide-v1.pdf"]) fs.copyFileSync(path.join(REPO, f), path.join(APP, f));
 const GUIDE_BYTES = fs.statSync(path.join(REPO, "crew-guide-v1.pdf")).size;
 const GUIDE_LOG = path.join(SP, "guide-requests.log");
+fs.mkdirSync(path.join(APP, "assets"), { recursive: true });
+fs.copyFileSync(path.join(REPO, "assets", "rfm-fig-s3-13-v1.jpg"), path.join(APP, "assets", "rfm-fig-s3-13-v1.jpg"));
+const IMG_BYTES = fs.statSync(path.join(REPO, "assets", "rfm-fig-s3-13-v1.jpg")).size;
 
 const serverPy = path.join(SP, "serve.py");
 fs.writeFileSync(serverPy, `
@@ -30,7 +35,9 @@ os.chdir(sys.argv[1]); delay = float(sys.argv[3]); glog = sys.argv[4]
 class H(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path.split('?')[0].endswith('/crew-guide-v1.pdf'):
-            with open(glog, 'a') as f: f.write('GET ')
+            with open(glog, 'a') as f: f.write('GUIDE ')
+        if self.path.split('?')[0].endswith('/rfm-fig-s3-13-v1.jpg'):
+            with open(glog, 'a') as f: f.write('IMG ')
         if delay and self.path.split('?')[0] in ('/Daily-Flight-Card/', '/Daily-Flight-Card/index.html'):
             time.sleep(delay)
         return super().do_GET()
@@ -40,7 +47,26 @@ with socketserver.ThreadingTCPServer(('127.0.0.1', int(sys.argv[2])), H) as s: s
 `);
 let server = null;
 const startServer = async (delay = 0) => { server = spawn("python3", ["-I", serverPy, SITE, String(PORT), String(delay), GUIDE_LOG], { stdio: "ignore" }); await sleep(600); };
-const guideGets = () => (fs.existsSync(GUIDE_LOG) ? fs.readFileSync(GUIDE_LOG, "utf8").split("GET").length - 1 : 0);
+const logCount = (tag) => (fs.existsSync(GUIDE_LOG) ? fs.readFileSync(GUIDE_LOG, "utf8").split(tag).length - 1 : 0);
+const guideGets = () => logCount("GUIDE"), imgGets = () => logCount("IMG");
+const IMG_CACHED = `caches.has('flightcard-assets-v1').then(h => h ? caches.open('flightcard-assets-v1').then(c => c.match(new URL('./assets/rfm-fig-s3-13-v1.jpg', location.href).href)).then(m => !!m) : false)`;
+// Open PWR CHK, enter a check, export the power check PDF through a stubbed share sheet; report what the page shows.
+const PWR_EXPORT = `(async () => {
+  const sl = (ms) => new Promise(r => setTimeout(r, ms));
+  [...document.querySelectorAll('[data-tabbar] button')].find(b => b.textContent.trim() === 'PWR CHK').click();
+  await sl(800);
+  const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+  for (const [k, v] of [['oat','12'],['qnh','996'],['e0itt','745'],['e0ng','89.7'],['e1itt','750'],['e1ng','89.9']]) {
+    const el = document.querySelector('[data-pc="' + k + '"]'); set.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true })); await sl(30); }
+  window.__pdf = null;
+  navigator.canShare = () => true; navigator.share = async (d) => { window.__pdf = { size: d.files[0].size, name: d.files[0].name }; };
+  document.querySelector('[data-pc-export]').click();
+  for (let i = 0; i < 50 && !window.__pdf; i++) await sl(100);
+  const img = new Image(); img.src = './assets/rfm-fig-s3-13-v1.jpg';
+  let natural = 0; try { await img.decode(); natural = img.naturalWidth; } catch {}
+  return { shown: !!document.querySelector('[data-pc-img]'), notSaved: !!document.querySelector('[data-pc-noimg]'), natural, pdf: window.__pdf,
+    summary: (document.querySelector('[data-pc-summary]') || {}).textContent };
+})()`;
 // fetch the guide from the page (as the app's link would): status, size, and the notice text if any
 const GUIDE_FETCH = `fetch('./crew-guide-v1.pdf').then(async r => { const b = await r.arrayBuffer(); return { status: r.status, size: b.byteLength,
   text: r.status === 200 ? '' : new TextDecoder().decode(b) }; }).catch(e => ({ status: -1, error: String(e) }))`;
@@ -62,6 +88,7 @@ const stopServer = async () => { if (server) { server.kill("SIGKILL"); server = 
   const appText = () => js(`(document.getElementById('root')||{}).textContent||''`).catch(() => "");
   const waitApp = async (timeout = 15000) => { const t0 = Date.now(); while (Date.now() - t0 < timeout) { const t = await appText(); if (t && t.includes("FLT MIN")) return { ms: Date.now() - t0, text: t }; await sleep(100); } return { ms: Date.now() - t0, text: await appText() }; };
   await send("Page.enable"); await send("Runtime.enable");
+  await send("Emulation.setDeviceMetricsOverride", { width: 375, height: 812, deviceScaleFactor: 2, mobile: true }); // iPhone width
 
   try {
     // ── A. first visit with signal ──
@@ -82,6 +109,14 @@ const stopServer = async () => { if (server) { server.kill("SIGKILL"); server = 
       if (!guideOk) await sleep(250);
     }
     check("crew guide cached in its own cache flightcard-guide-v1", guideOk);
+    let imgOk = false;
+    for (let i = 0; i < 60 && !imgOk; i++) { imgOk = await js(IMG_CACHED); if (!imgOk) await sleep(250); }
+    check("RFM chart image cached in its own cache flightcard-assets-v1 after the first load", imgOk);
+    const bar = await js(`document.fonts.ready.then(() => { const bs = [...document.querySelector('[data-tabbar]').children];
+      return { w: innerWidth, labels: bs.map(b => b.textContent.trim()), over: bs.filter(b => b.scrollWidth > b.clientWidth).map(b => b.textContent),
+        rows: new Set(bs.map(b => Math.round(b.getBoundingClientRect().top))).size, barOver: document.querySelector('[data-tabbar]').scrollWidth > document.querySelector('[data-tabbar]').clientWidth,
+        pageOver: document.documentElement.scrollWidth > innerWidth }; })`);
+    check(`375 px: five tabs + toggle on one row, no tab clipped (${bar && bar.labels.slice(0, 5).join(" · ")})`, bar && bar.w === 375 && bar.over.length === 0 && bar.rows === 1 && !bar.barOver && !bar.pageOver && bar.labels.slice(0, 5).join("|") === "A/C DATA|FLIGHTS|UPLIFT|PWR CHK|IFR FUEL");
 
     // ── B. no signal at all ──
     await stopServer();
@@ -92,7 +127,11 @@ const stopServer = async () => { if (server) { server.kill("SIGKILL"); server = 
     await sleep(300);
     const gOff = await js(GUIDE_FETCH);
     check(`NO SIGNAL: the crew guide opens from the phone (200, ${gOff && gOff.size} bytes = file on disk ${GUIDE_BYTES})`, gOff && gOff.status === 200 && gOff.size === GUIDE_BYTES);
-    check("no signal: app fully usable (IFR FUEL tab + map render offline)", (await appText()).includes("Planning cross-check only") && (await js(`!!document.querySelector('svg[role="img"] path')`)));
+    check("no signal: app fully usable (IFR FUEL tab + map render offline)", (await appText()).includes("Planning cross-check only") && (await js(`!!document.querySelector('svg[role="img"][aria-label="Map of the trip"] path')`)));
+    const pw = await js(PWR_EXPORT);
+    check(`NO SIGNAL: PWR CHK shows the RFM page (decoded ${pw && pw.natural} px wide) — not the 'not saved' box`, pw && pw.shown && !pw.notSaved && pw.natural === 2121 && pw.summary === "BOTH ENGINES WITHIN LIMITS");
+    check(`NO SIGNAL: power check PDF builds with the image embedded (${pw && pw.pdf && pw.pdf.size} bytes > 400 KB, ${pw && pw.pdf && pw.pdf.name})`, pw && pw.pdf && pw.pdf.size > 400000 && /^PC_.*Z\.pdf$/.test(pw.pdf.name));
+    check(`(image on disk is ${IMG_BYTES} bytes)`, IMG_BYTES > 500000);
 
     // ── C. flaky signal: server hangs 10 s on the page ──
     await startServer(10);
@@ -108,7 +147,7 @@ const stopServer = async () => { if (server) { server.kill("SIGKILL"); server = 
     if (vm.length !== 1) throw new Error("expected exactly one quoted \"vN\" (APP_VERSION) in index.html, found " + vm.length);
     const V0 = vm[0].slice(1, -1), V1 = "v" + (+V0.slice(1) + 1);
     fs.writeFileSync(idx, before.replace(`"${V0}"`, `"${V1}"`)); // only the APP_VERSION literal
-    const guideGetsBeforeDeploy = guideGets();
+    const guideGetsBeforeDeploy = guideGets(), imgGetsBeforeDeploy = imgGets();
     // a real deploy rebuilds: new page → new fingerprint → new cache name
     fs.writeFileSync(swf, fs.readFileSync(swf, "utf8").replace(/const BUILD_STAMP = "([^"]+)";/, 'const BUILD_STAMP = "$1-deploy2";'));
     const newIdx = fs.readFileSync(idx, "utf8");
@@ -124,6 +163,8 @@ const stopServer = async () => { if (server) { server.kill("SIGKILL"); server = 
     check("new version installed in the background (new cache, old purged)", keysMid.some((k) => k.endsWith("-deploy2")) && !keysMid.includes(firstCache));
     check("deploy: crew guide cache kept (flightcard-guide-v1)", keysMid.includes("flightcard-guide-v1"));
     check(`deploy: crew guide NOT downloaded again (${guideGets() - guideGetsBeforeDeploy} requests)`, guideGets() === guideGetsBeforeDeploy);
+    check("deploy: RFM image cache kept (flightcard-assets-v1)", keysMid.includes("flightcard-assets-v1"));
+    check(`deploy: RFM image NOT downloaded again (${imgGets() - imgGetsBeforeDeploy} requests)`, imgGets() === imgGetsBeforeDeploy);
 
     // ── E. next launch picks it up ──
     await send("Page.reload", {});
@@ -139,6 +180,14 @@ const stopServer = async () => { if (server) { server.kill("SIGKILL"); server = 
     const gNone = await js(GUIDE_FETCH);
     check("guide not saved + NO signal: calm 503 notice", gNone && gNone.status === 503 && gNone.text.includes("Crew guide not saved on this phone yet. Open it once with signal."));
     check("…and the app page is unaffected", (await appText()).includes("FLT MIN"));
+
+    // ── G. RFM image never saved on this phone, no signal ──
+    await js(`caches.delete('flightcard-assets-v1')`);
+    await send("Page.reload", {});
+    await waitApp();
+    const pn = await js(PWR_EXPORT);
+    check("image not saved + NO signal: PWR CHK shows the grey 'not saved yet' box", pn && pn.notSaved && !pn.shown && pn.summary === "BOTH ENGINES WITHIN LIMITS");
+    check(`…and the power check PDF still builds, without the image (${pn && pn.pdf && pn.pdf.size} bytes)`, pn && pn.pdf && pn.pdf.size > 1000 && pn.pdf.size < 100000);
   } catch (err) {
     check("harness crashed: " + err.stack, false);
   } finally {

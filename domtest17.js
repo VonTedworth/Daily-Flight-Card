@@ -74,7 +74,7 @@ const btn = (t) => [...d.querySelectorAll("button")].find((b) => b.textContent.t
 const marker = (id) => d.querySelector(`g[data-site="${id}"]`);
 const isSel = (id) => marker(id).getAttribute("aria-label").includes("selected");
 const text = () => d.getElementById("root").textContent;
-const svg = () => d.querySelector('svg[role="img"]');
+const svg = () => d.querySelector('svg[role="img"][aria-label="Map of the trip"]');
 const lines = (kind) => [...svg().querySelectorAll(`line[data-route="${kind}"]`)];
 const near = (a, b) => Math.abs(a - b) < 0.01;
 const joins = (l, a, b) => { const A = f.project(f.siteById(a).lat, f.siteById(a).lon), B = f.project(f.siteById(b).lat, f.siteById(b).lon);
