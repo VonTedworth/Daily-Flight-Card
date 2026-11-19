@@ -121,7 +121,7 @@ should still be bumped every time.
 - The app must launch with no signal after one online visit (service worker), and an
   update must never reload or interrupt an open session.
 - Purple (`C.purple`, NIGHT #B57CFF / DAY #6A2FC0) means "tap to expand" and is used only by
-  `ExpandArrow` (domtest23 fails if it appears anywhere else). In IFR FUEL every expandable thing
+  `ExpandArrow` (domtest23 fails if it appears anywhere else). In IFR FUEL and PWR CHK every expandable thing
   uses it; the sector FUEL WORKINGS are a `<details>` (closed by default, state `workOpen`, reset
   wherever `open` is reset). Collapsing is screen-only: the PDF always prints every sector's
   full workings, and the table stays in the DOM.
@@ -235,3 +235,8 @@ should still be bumped every time.
   padding 12px 4px, gap 6, toggle 36 px, text 10.5 px / 0.03em (11 px measured 1-3 px too wide).
   New palette colour `red` (PAM failing / exceeds only). The real-Chrome check now runs at 375 px.
   Personal trial — the company power check method governs.
+- 19.11.2026 (v21) — PWR CHK, at Ed's request: A/C REG and SRP follow the A/C DATA page (live, until
+  typed over on PWR CHK — `follow` ref); CHART and CROSS-CHECK: OTHER APP are now `<details>` drop-downs
+  with the purple ExpandArrow (CHART open by default and kept as left for the session; CROSS-CHECK
+  closed, opened automatically when a recorded check with cross-check figures is reopened). Screen
+  only — the PDF always has the chart and any cross-check.

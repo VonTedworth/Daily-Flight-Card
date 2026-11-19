@@ -306,7 +306,43 @@ const zuluNow = () => { const d = new Date(), p = (n) => String(n).padStart(2, "
   check(`legacy card PDF byte-identical to v19's output (apart from jsPDF's date / file ID) — ${legacyNow.length} vs ${legacyV19.length} bytes`, legacyNow.length > 1000 && normalisePdf(legacyNow) === normalisePdf(legacyV19));
   check("legacy PDF line printed as before", legacyNow.includes("(FLT 1: OAT 12 C  QNH 1013 HPA  ENG1 N1 88.5% ITT 745 C  ENG2 N1 88.9% ITT 752 C) Tj"));
 
-  check("no script errors in any run", [A, B, G, H, L].every((X) => X.errors.length === 0));
+  // ════════ v21: A/C REG + SRP follow the A/C DATA page; CHART and CROSS-CHECK drop-downs ════════
+  const M = open(card([], { acReg: "", srp: "" }));
+  await sleep(2500);
+  M.click(M.tab("PWR CHK")); await sleep(200);
+  check("blank card: A/C REG and SRP empty", M.pc("acReg").value === "" && M.pc("srp").value === "");
+  M.click(M.tab("A/C DATA")); await sleep(150);
+  const srpIn = () => M.qa("input").find((i) => i.previousElementSibling?.textContent?.trim() === "SRP" || i.closest("label")?.firstChild?.textContent?.trim() === "SRP");
+  const regSel = M.qa("select").find((x) => [...x.options].some((o) => o.value === "G-KSSC"));
+  regSel.value = "G-KSSC"; regSel.dispatchEvent(new M.w.Event("change", { bubbles: true })); await sleep(80);
+  await M.type(srpIn(), "3007575");
+  M.click(M.tab("PWR CHK")); await sleep(150);
+  check(`filled in on A/C DATA afterwards → PWR CHK follows (${M.pc("acReg").value} / ${M.pc("srp").value})`, M.pc("acReg").value === "G-KSSC" && M.pc("srp").value === "3007575");
+  await M.type(M.pc("srp"), "3007576");
+  M.click(M.tab("A/C DATA")); await sleep(100);
+  await M.type(srpIn(), "3007577");
+  M.click(M.tab("PWR CHK")); await sleep(150);
+  check("once typed in on PWR CHK, the SRP stays as typed (REG still follows)", M.pc("srp").value === "3007576" && M.pc("acReg").value === "G-KSSC");
+  // drop-downs
+  const fold = (n) => M.q(`[data-pc-fold="${n}"]`);
+  check("CHART is a drop-down with the purple arrow, open by default", fold("chart") && fold("chart").tagName === "DETAILS" && fold("chart").open && M.q('[data-pc-fold-toggle="chart"] [data-arrow]').dataset.arrow === "open" && fold("chart").contains(M.q("[data-pc-chart]")));
+  check("CROSS-CHECK is a drop-down with the purple arrow, closed by default", fold("xcheck") && !fold("xcheck").open && M.q('[data-pc-fold-toggle="xcheck"] [data-arrow]').dataset.arrow === "closed" && fold("xcheck").contains(M.pc("x0itt")));
+  check("arrows are the shared purple ExpandArrow (22 px)", /181, 124, 255|#b57cff/i.test(M.q('[data-pc-fold-toggle="chart"] [data-arrow]').style.border) && M.q('[data-pc-fold-toggle="chart"] [data-arrow]').style.width === "22px");
+  M.click(M.q('[data-pc-fold-toggle="chart"]')); await sleep(80);
+  check("tap CHART → minimised (arrow closed), chart still in the page", !fold("chart").open && M.q('[data-pc-fold-toggle="chart"] [data-arrow]').dataset.arrow === "closed" && !!M.q("[data-pc-chart]"));
+  M.click(M.q('[data-pc-fold-toggle="xcheck"]')); await sleep(80);
+  check("tap CROSS-CHECK → opens", fold("xcheck").open && M.q('[data-pc-fold-toggle="xcheck"] [data-arrow]').dataset.arrow === "open");
+  await M.fill({ oat: "12", qnh: "996", e0itt: "745", e0ng: "89.7", e1itt: "750", e1ng: "89.9", x0itt: "776" });
+  M.click(M.q("[data-pc-record]")); await sleep(800);
+  check("recorded check keeps the SRP typed on PWR CHK", M.saved().powerChecks[0].srp === "3007576" && M.saved().powerChecks[0].acReg === "G-KSSC");
+  M.click(M.tab("PWR CHK")); await sleep(200);
+  check("reopening a check with cross-check figures opens that drop-down", fold("xcheck").open && M.pc("x0itt").value === "776");
+  check("CHART stays minimised for the session (a new check doesn't reopen it)", !fold("chart").open);
+  M.click(M.q("[data-pc-export]")); await sleep(1200);
+  const mb = (await M.shared()).bytes;
+  check("PDF with CHART and CROSS-CHECK minimised still has the chart overlay and the cross-check", mb.includes("CROSS-CHECK: OTHER APP") && mb.includes("0.88 0.13 0.11 RG") && mb.includes("(PIC ______________________________) Tj"));
+
+  check("no script errors in any run", [A, B, G, H, L, M].every((X) => X.errors.length === 0));
 
   let fail = 0;
   for (const [n, ok] of res) { console.log((ok ? "PASS" : "FAIL") + "  " + n); if (!ok) fail++; }

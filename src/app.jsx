@@ -87,7 +87,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v20";
+const APP_VERSION = "v21";
 // The user guide (rendered on GitHub). Opening it needs signal; the app itself does not.
 const README_URL = "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md";
 // The crew guide (33-slide PDF), saved on the phone by the service worker (own cache, kept across
@@ -3236,6 +3236,10 @@ function PowerCheck({ active, ctx, cardInfo, onRecord, onCancel }) {
   const [st, setSt] = useState(() => pcBlank(cardInfo));
   const [img, setImg] = useState("unknown"); // "ok" | "missing" | "unknown" (not tried yet)
   const [exporting, setExporting] = useState(false);
+  const [chartOpen, setChartOpen] = useState(true); // CHART drop-down, open by default
+  const [xOpen, setXOpen] = useState(false); // CROSS-CHECK drop-down, closed by default (optional)
+  // A/C REG and SRP follow the A/C DATA page until typed in here (or if left empty).
+  const follow = useRef({ acReg: true, srp: true });
   const row = ctx ? ctx.row : null;
 
   // A new context (ground run YES, A/C DATA button, a tapped entry, or the tab bar with none):
@@ -3246,6 +3250,9 @@ function PowerCheck({ active, ctx, cardInfo, onRecord, onCancel }) {
     const info = infoRef.current || {};
     const ex = (info.powerChecks || []).find((p) => p && p.v === 2 && p.row === ctx.row);
     setSt(ex ? pcFromEntry(ex) : pcBlank(info));
+    follow.current = ex ? { acReg: !ex.acReg, srp: !ex.srp } : { acReg: true, srp: true };
+    // a recorded check with cross-check figures opens that drop-down; otherwise it starts closed
+    setXOpen(Boolean(ex && (ex.eng || []).some((e) => e && (String(e.xItt || "") !== "" || String(e.xNg || "") !== ""))));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx && ctx.seq]);
 
@@ -3259,6 +3266,14 @@ function PowerCheck({ active, ctx, cardInfo, onRecord, onCancel }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
+
+  useEffect(() => {
+    const info = cardInfo || {};
+    const patch = {};
+    if (follow.current.acReg) patch.acReg = (info.acReg || "").trim().toUpperCase();
+    if (follow.current.srp) patch.srp = info.srp || "";
+    if (Object.keys(patch).length) setSt((s) => ({ ...s, ...patch }));
+  }, [cardInfo && cardInfo.acReg, cardInfo && cardInfo.srp]);
 
   const R = useMemo(() => pcCompute(st), [st]);
   const set = (patch) => setSt((s) => ({ ...s, ...patch }));
@@ -3325,6 +3340,29 @@ function PowerCheck({ active, ctx, cardInfo, onRecord, onCancel }) {
     <div {...attrs} style={{ color: pcTone(tone), fontFamily: mono, fontSize: 10.5, letterSpacing: "0.04em", lineHeight: 1.5, marginTop: 6 }}>
       {txt}
     </div>
+  );
+  // A drop-down section: the purple "tap to expand" arrow + heading, as the IFR FUEL WORKINGS.
+  // Collapsing is screen-only (the content stays in the page; the PDF always has everything).
+  const fold = (name, title, open, setOpen, body) => (
+    <details
+      data-pc-fold={name}
+      open={open}
+      onToggle={(e) => {
+        const o = e.currentTarget.open;
+        if (o !== open) setOpen(o);
+      }}
+      style={{ border: `1px solid ${C.edge}`, borderRadius: 8, padding: 12, marginBottom: 12 }}
+    >
+      <summary
+        data-pc-fold-toggle={name}
+        className="pc-sum"
+        style={{ listStyle: "none", display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+      >
+        <ExpandArrow open={open} size={22} />
+        <span style={{ color: C.green, fontFamily: mono, fontSize: 11, fontWeight: 600, letterSpacing: "0.15em" }}>{title}</span>
+      </summary>
+      <div style={{ marginTop: 10 }}>{body}</div>
+    </details>
   );
   const grid = (cols, children, extra = {}) => (
     <div style={{ display: "grid", gridTemplateColumns: cols, gap: 8, ...extra }}>{children}</div>
@@ -3459,6 +3497,7 @@ function PowerCheck({ active, ctx, cardInfo, onRecord, onCancel }) {
 
   return (
     <>
+      <style>{`.pc-sum { list-style: none; } .pc-sum::-webkit-details-marker { display: none; } .pc-sum::marker { content: ""; }`}</style>
       <PanelHeader title="POWER CHECK" subtitle="HOVER · FIG S3-13 EAPS OFF" />
       <div
         data-pc-trial
@@ -3488,8 +3527,8 @@ function PowerCheck({ active, ctx, cardInfo, onRecord, onCancel }) {
           </div>
           {/* SRP numbers run to 7 digits; SITE is a 4-letter ICAO code. */}
           {grid("minmax(0,1fr) minmax(0,1.15fr) minmax(0,0.75fr)", [
-            fld("acReg", "A/C REG", st.acReg, (v) => set({ acReg: v }), "text"),
-            fld("srp", "SRP", st.srp, (v) => set({ srp: v }), "int"),
+            fld("acReg", "A/C REG", st.acReg, (v) => { follow.current.acReg = v === ""; set({ acReg: v }); }, "text"),
+            fld("srp", "SRP", st.srp, (v) => { follow.current.srp = v === ""; set({ srp: v }); }, "int"),
             fld("site", "SITE", st.site, (v) => set({ site: v }), "text"),
           ])}
           {grid(
@@ -3531,9 +3570,12 @@ function PowerCheck({ active, ctx, cardInfo, onRecord, onCancel }) {
         </div>
       )}
 
-      {card(
+      {fold(
+        "chart",
+        "CHART",
+        chartOpen,
+        setChartOpen,
         <>
-          {head("CHART")}
           <div data-pc-chartwrap style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
             <svg
               data-pc-chart
@@ -3586,9 +3628,12 @@ function PowerCheck({ active, ctx, cardInfo, onRecord, onCancel }) {
         </>
       )}
 
-      {card(
+      {fold(
+        "xcheck",
+        "CROSS-CHECK: OTHER APP (OPTIONAL)",
+        xOpen,
+        setXOpen,
         <>
-          {head("CROSS-CHECK: OTHER APP (OPTIONAL)")}
           {grid(
             "minmax(0,1fr) minmax(0,1fr)",
             [0, 1].map((i) => (
