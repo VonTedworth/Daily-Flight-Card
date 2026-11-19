@@ -19,6 +19,11 @@ const CACHE = "flightcard-" + BUILD_STAMP;
 // exactly as it does online (layouts such as the one-line flight-row margins depend on it).
 const FONT_CACHE = "flightcard-fonts-v1";
 const FONT_HOSTS = ["fonts.googleapis.com", "fonts.gstatic.com"];
+// The crew guide (PDF, ~4 MB) has its own cache, kept across deploys like the fonts, so a deploy
+// never downloads it again. The file is immutable under its name: a new guide is
+// crew-guide-v2.pdf — bump GUIDE and GUIDE_CACHE together (and GUIDE_URL in app.jsx).
+const GUIDE = "./crew-guide-v1.pdf";
+const GUIDE_CACHE = "flightcard-guide-v1"; // bump together with GUIDE
 const NAV_TIMEOUT_MS = 3000;
 
 const SCOPE = self.registration.scope; // e.g. https://vontedworth.github.io/Daily-Flight-Card/
@@ -36,6 +41,11 @@ self.addEventListener("install", (event) => {
       // cache: "reload" bypasses the browser's HTTP cache so the shell is truly this build.
       await cache.addAll(SHELL.map((u) => new Request(abs(u), { cache: "reload" })));
       await Promise.all(OPTIONAL.map((u) => cache.add(new Request(abs(u), { cache: "reload" })).catch(() => {})));
+      // Crew guide: best effort, after the shell is cached; never fails the install.
+      try {
+        const gc = await caches.open(GUIDE_CACHE);
+        if (!(await gc.match(abs(GUIDE)))) await gc.add(new Request(abs(GUIDE), { cache: "reload" })).catch(() => {});
+      } catch {}
     })()
   );
 });
@@ -44,7 +54,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k !== CACHE && k !== FONT_CACHE).map((k) => caches.delete(k)));
+      await Promise.all(keys.filter((k) => k !== CACHE && k !== FONT_CACHE && k !== GUIDE_CACHE).map((k) => caches.delete(k)));
       await self.clients.claim(); // control open pages for future fetches — no reload, no message
     })()
   );
@@ -64,6 +74,8 @@ self.addEventListener("fetch", (event) => {
 
   if (isShell && (req.mode === "navigate" || req.destination === "document" || req.destination === "")) {
     event.respondWith(navigation(event));
+  } else if (url.href === abs(GUIDE)) {
+    event.respondWith(guideResponse(event));
   } else if (url.href.startsWith(SCOPE)) {
     event.respondWith(cacheFirst(event, CACHE, false));
   } else if (FONT_HOSTS.includes(url.hostname)) {
@@ -133,6 +145,37 @@ async function cacheFirst(event, cacheName, allowOpaque) {
   }
   const resp = await network;
   return resp || Response.error();
+}
+
+// Crew guide: cache first, no background refresh (immutable under its name). Not cached yet:
+// network, stored if OK. Neither: a calm notice — never throws into the page.
+async function guideResponse(event) {
+  const key = abs(GUIDE);
+  let cache = null;
+  try {
+    cache = await caches.open(GUIDE_CACHE);
+    const hit = await cache.match(key);
+    if (hit) return hit;
+  } catch {}
+  try {
+    const resp = await fetch(event.request);
+    if (resp && resp.ok && cache) {
+      const copy = resp.clone();
+      event.waitUntil(cache.put(key, copy).catch(() => {}));
+    }
+    if (resp) return resp;
+  } catch {}
+  return guideOffline();
+}
+
+function guideOffline() {
+  return new Response(
+    '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+      '<title>Crew guide — offline</title>' +
+      '<body style="margin:0;background:#05080b;color:#8fa3b3;font:14px ui-monospace,monospace;padding:40px 24px;line-height:1.6">' +
+      "<p>Crew guide not saved on this phone yet. Open it once with signal.</p></body>",
+    { status: 503, headers: { "Content-Type": "text/html; charset=utf-8" } }
+  );
 }
 
 function offlinePage() {

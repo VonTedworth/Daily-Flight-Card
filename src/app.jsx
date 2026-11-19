@@ -83,9 +83,13 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v18";
+const APP_VERSION = "v19";
 // The user guide (rendered on GitHub). Opening it needs signal; the app itself does not.
 const README_URL = "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md";
+// The crew guide (33-slide PDF), saved on the phone by the service worker (own cache, kept across
+// deploys). The name carries the version and never changes: a new guide is crew-guide-v2.pdf, and
+// GUIDE_URL here + GUIDE / GUIDE_CACHE in service-worker.src.js are bumped together.
+const GUIDE_URL = "./crew-guide-v1.pdf"; // relative: the site lives on a subpath
 const BUILD_DATE = typeof window !== "undefined" && window.__BUILD_DATE__ ? window.__BUILD_DATE__ : "";
 const NUM_ROWS = 7; // one SRP page has seven sectors
 // >4600 kg is NOT an exceedance — the AW169 all-up mass is 4800 kg.
@@ -584,8 +588,8 @@ function FuelCalc({
         TEMPERATURE (TYPICALLY 0.775–0.81 KG/L).
       </p>
       <a
-        data-readme
-        href={README_URL}
+        data-guide
+        href={GUIDE_URL}
         target="_blank"
         rel="noopener noreferrer"
         style={{
@@ -595,6 +599,26 @@ function FuelCalc({
           borderTop: `1px solid ${C.edge}`,
           color: C.cyan,
           fontFamily: mono,
+          fontSize: 12,
+          letterSpacing: "0.1em",
+          textDecoration: "none",
+        }}
+      >
+        USER GUIDE — HOW TO USE THE APP ↗
+        <span style={{ display: "block", color: C.grey, fontSize: 9.5, letterSpacing: "0.04em", marginTop: 3 }}>
+          33-slide crew guide (PDF). Saved on this phone.
+        </span>
+      </a>
+      <a
+        data-readme
+        href={README_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          display: "block",
+          marginTop: 12,
+          color: C.cyan,
+          fontFamily: mono,
           fontSize: 10.5,
           letterSpacing: "0.1em",
           textDecoration: "none",
@@ -602,7 +626,7 @@ function FuelCalc({
       >
         README — HOW THE APP WORKS ↗
         <span style={{ display: "block", color: C.grey, fontSize: 9.5, letterSpacing: "0.04em", marginTop: 3 }}>
-          Opens the guide on GitHub (needs signal).
+          Full calculations on GitHub (needs signal).
         </span>
       </a>
     </>

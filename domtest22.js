@@ -80,6 +80,13 @@ const def = (patch = {}) => Object.assign({ stops: ["EGKR", "EGKD", "EGKC", "EGK
   const a = d.querySelector("a[data-readme]");
   check("UPLIFT tab has a README link at the bottom", !!a && a.textContent.includes("README") && a.offsetParent !== undefined);
   check("README link points at the repo README on GitHub and opens in a new tab", a && a.getAttribute("href") === "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md" && a.getAttribute("target") === "_blank" && /noopener/.test(a.getAttribute("rel")));
+  const g = d.querySelector("a[data-guide]");
+  check("UPLIFT tab has the crew guide link: ./crew-guide-v1.pdf, new tab, noopener, 'USER GUIDE'",
+    !!g && g.getAttribute("href") === "./crew-guide-v1.pdf" && g.getAttribute("target") === "_blank" && /noopener/.test(g.getAttribute("rel")) && g.textContent.includes("USER GUIDE") && g.textContent.includes("Saved on this phone"));
+  check("README link still there, AFTER the guide link, label unchanged, new subtext",
+    !!g && !!a && (g.compareDocumentPosition(a) & w.Node.DOCUMENT_POSITION_FOLLOWING) && a.textContent.includes("README — HOW THE APP WORKS") && a.textContent.includes("Full calculations on GitHub (needs signal).") && !a.textContent.includes("Opens the guide"));
+  check("only the guide link has the top divider", g && /1px solid/.test(g.style.borderTop) && !a.style.borderTop && !a.style.paddingTop && a.style.marginTop === "12px");
+  check("links use the theme colours, never the expand-arrow purple", g && !/181, 124, 255|b57cff|106, 47, 192|6a2fc0/i.test(g.getAttribute("style") + a.getAttribute("style")));
   check("README link is the last thing on the UPLIFT tab", (() => { const all = [...a.parentElement.children]; return all[all.length - 1] === a; })());
 
   let fail = 0;

@@ -3,6 +3,8 @@
 // Drives headless Chrome via the DevTools protocol against a COPY of the built site served
 // under /Daily-Flight-Card/ (the GitHub Pages layout): first visit, no signal, flaky signal
 // (page hangs 10 s), a deploy while the app is open (no reload), and the next launch.
+// Also the crew guide PDF: cached once in its own cache, served with no signal, kept (and not
+// re-downloaded) across a deploy, and a calm 503 notice when it was never saved.
 const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
@@ -17,14 +19,18 @@ const check = (n, ok) => { res.push([n, !!ok]); console.log((ok ? "PASS" : "FAIL
 
 fs.rmSync(SITE, { recursive: true, force: true });
 fs.mkdirSync(APP, { recursive: true });
-for (const f of ["index.html", "service-worker.js", "manifest.json"]) fs.copyFileSync(path.join(REPO, f), path.join(APP, f));
+for (const f of ["index.html", "service-worker.js", "manifest.json", "crew-guide-v1.pdf"]) fs.copyFileSync(path.join(REPO, f), path.join(APP, f));
+const GUIDE_BYTES = fs.statSync(path.join(REPO, "crew-guide-v1.pdf")).size;
+const GUIDE_LOG = path.join(SP, "guide-requests.log");
 
 const serverPy = path.join(SP, "serve.py");
 fs.writeFileSync(serverPy, `
 import http.server, socketserver, time, sys, os
-os.chdir(sys.argv[1]); delay = float(sys.argv[3])
+os.chdir(sys.argv[1]); delay = float(sys.argv[3]); glog = sys.argv[4]
 class H(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
+        if self.path.split('?')[0].endswith('/crew-guide-v1.pdf'):
+            with open(glog, 'a') as f: f.write('GET ')
         if delay and self.path.split('?')[0] in ('/Daily-Flight-Card/', '/Daily-Flight-Card/index.html'):
             time.sleep(delay)
         return super().do_GET()
@@ -33,7 +39,11 @@ socketserver.ThreadingTCPServer.allow_reuse_address = True
 with socketserver.ThreadingTCPServer(('127.0.0.1', int(sys.argv[2])), H) as s: s.serve_forever()
 `);
 let server = null;
-const startServer = async (delay = 0) => { server = spawn("python3", ["-I", serverPy, SITE, String(PORT), String(delay)], { stdio: "ignore" }); await sleep(600); };
+const startServer = async (delay = 0) => { server = spawn("python3", ["-I", serverPy, SITE, String(PORT), String(delay), GUIDE_LOG], { stdio: "ignore" }); await sleep(600); };
+const guideGets = () => (fs.existsSync(GUIDE_LOG) ? fs.readFileSync(GUIDE_LOG, "utf8").split("GET").length - 1 : 0);
+// fetch the guide from the page (as the app's link would): status, size, and the notice text if any
+const GUIDE_FETCH = `fetch('./crew-guide-v1.pdf').then(async r => { const b = await r.arrayBuffer(); return { status: r.status, size: b.byteLength,
+  text: r.status === 200 ? '' : new TextDecoder().decode(b) }; }).catch(e => ({ status: -1, error: String(e) }))`;
 const stopServer = async () => { if (server) { server.kill("SIGKILL"); server = null; await sleep(400); } };
 
 (async () => {
@@ -66,6 +76,12 @@ const stopServer = async () => { if (server) { server.kill("SIGKILL"); server = 
     check("service worker registered at the SUBPATH scope " + (st && st.scope), st && st.scope === URL0 && st.active === "activated");
     check("this build's cache holds ./, ./index.html, ./manifest.json", st && st.ent.includes(URL0) && st.ent.includes(URL0 + "index.html") && st.ent.includes(URL0 + "manifest.json"));
     const firstCache = st && st.keys.find((k) => /^flightcard-\d{8}/.test(k));
+    let guideOk = false;
+    for (let i = 0; i < 60 && !guideOk; i++) {
+      guideOk = await js(`caches.has('flightcard-guide-v1').then(h => h ? caches.open('flightcard-guide-v1').then(c => c.match(new URL('./crew-guide-v1.pdf', location.href).href)).then(m => !!m) : false)`);
+      if (!guideOk) await sleep(250);
+    }
+    check("crew guide cached in its own cache flightcard-guide-v1", guideOk);
 
     // ── B. no signal at all ──
     await stopServer();
@@ -74,7 +90,9 @@ const stopServer = async () => { if (server) { server.kill("SIGKILL"); server = 
     check(`NO SIGNAL (server dead): app launches from cache in ${b.ms} ms`, b.text.includes("FLT MIN") && b.ms < 3000);
     await js(`(() => { const btn = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'IFR FUEL'); btn && btn.click(); return true; })()`);
     await sleep(300);
-    check("no signal: app fully usable (IFR FUEL tab + map render offline)", (await appText()).includes("AW169 CROSS-CHECK") && (await js(`!!document.querySelector('svg[role="img"] path')`)));
+    const gOff = await js(GUIDE_FETCH);
+    check(`NO SIGNAL: the crew guide opens from the phone (200, ${gOff && gOff.size} bytes = file on disk ${GUIDE_BYTES})`, gOff && gOff.status === 200 && gOff.size === GUIDE_BYTES);
+    check("no signal: app fully usable (IFR FUEL tab + map render offline)", (await appText()).includes("Planning cross-check only") && (await js(`!!document.querySelector('svg[role="img"] path')`)));
 
     // ── C. flaky signal: server hangs 10 s on the page ──
     await startServer(10);
@@ -86,30 +104,41 @@ const stopServer = async () => { if (server) { server.kill("SIGKILL"); server = 
     // ── D. a new deploy while the app is open ──
     const idx = path.join(APP, "index.html"), swf = path.join(APP, "service-worker.js");
     const before = fs.readFileSync(idx, "utf8");
-    if (before.split('"v8"').length !== 2) throw new Error("expected exactly one quoted \"v8\" (APP_VERSION) in index.html");
-    fs.writeFileSync(idx, before.replace('"v8"', '"v9"')); // only the APP_VERSION literal
+    const vm = before.match(/"v(\d+)"/g) || [];
+    if (vm.length !== 1) throw new Error("expected exactly one quoted \"vN\" (APP_VERSION) in index.html, found " + vm.length);
+    const V0 = vm[0].slice(1, -1), V1 = "v" + (+V0.slice(1) + 1);
+    fs.writeFileSync(idx, before.replace(`"${V0}"`, `"${V1}"`)); // only the APP_VERSION literal
+    const guideGetsBeforeDeploy = guideGets();
     // a real deploy rebuilds: new page → new fingerprint → new cache name
     fs.writeFileSync(swf, fs.readFileSync(swf, "utf8").replace(/const BUILD_STAMP = "([^"]+)";/, 'const BUILD_STAMP = "$1-deploy2";'));
     const newIdx = fs.readFileSync(idx, "utf8");
-    check("(test setup) simulated deploy changes only the version literal to \"v9\"", newIdx.split('"v9"').length === 2 && !newIdx.includes('"v8"'));
+    check(`(test setup) simulated deploy changes only the version literal ${V0} → ${V1}`, newIdx.split(`"${V1}"`).length === 2 && !newIdx.includes(`"${V0}"`));
     await startServer(0);
     await js(`window.__session = 'entering data'; true`);
     await js(`navigator.serviceWorker.getRegistration().then(r => r.update()).then(() => true)`);
     await sleep(3500);
     const midText = await appText();
     check("mid-session deploy: NO reload — the open page keeps its state", (await js(`window.__session`)) === "entering data");
-    check("mid-session deploy: open page is not swapped under the user (still v8)", /v8 · /.test(midText));
+    check(`mid-session deploy: open page is not swapped under the user (still ${V0})`, new RegExp(V0 + " · ").test(midText));
     const keysMid = await js(`caches.keys()`);
     check("new version installed in the background (new cache, old purged)", keysMid.some((k) => k.endsWith("-deploy2")) && !keysMid.includes(firstCache));
+    check("deploy: crew guide cache kept (flightcard-guide-v1)", keysMid.includes("flightcard-guide-v1"));
+    check(`deploy: crew guide NOT downloaded again (${guideGets() - guideGetsBeforeDeploy} requests)`, guideGets() === guideGetsBeforeDeploy);
 
     // ── E. next launch picks it up ──
     await send("Page.reload", {});
     let e = await waitApp();
-    check("next launch (online): shows the new version v9 — nobody stranded", /v9 · /.test(e.text));
+    check(`next launch (online): shows the new version ${V1} — nobody stranded`, new RegExp(V1 + " · ").test(e.text));
     await stopServer();
     await send("Page.reload", {});
     let f = await waitApp();
-    check("next launch with NO signal: still v9 from the new cache", /v9 · /.test(f.text) && f.text.includes("FLT MIN"));
+    check(`next launch with NO signal: still ${V1} from the new cache`, new RegExp(V1 + " · ").test(f.text) && f.text.includes("FLT MIN"));
+
+    // ── F. guide never saved on this phone, no signal ──
+    await js(`caches.delete('flightcard-guide-v1')`);
+    const gNone = await js(GUIDE_FETCH);
+    check("guide not saved + NO signal: calm 503 notice", gNone && gNone.status === 503 && gNone.text.includes("Crew guide not saved on this phone yet. Open it once with signal."));
+    check("…and the app page is unaffected", (await appText()).includes("FLT MIN"));
   } catch (err) {
     check("harness crashed: " + err.stack, false);
   } finally {

@@ -71,7 +71,18 @@ should still be bumped every time.
 - Page = network-first with a 3 s timeout then cache; same-origin assets and Google Fonts =
   cache-first, refreshed in the background (fonts in a separate cache kept across deploys so
   offline layout matches online).
-- Tests: domtest20 (build artefacts, registration, manifest), domtest21 (runs the built SW
+- Crew guide (`crew-guide-v1.pdf`, ~4 MB, repo root): its own cache `flightcard-guide-v1`, kept
+  across deploys like the fonts, so a deploy never downloads it again. Cached best-effort at
+  install AFTER the shell (never fails or delays the shell); served cache-first with no
+  background refresh (immutable under its name); not cached + no signal → a 503 notice
+  "Crew guide not saved on this phone yet. Open it once with signal."
+- **Updating the crew guide:** add `crew-guide-vN.pdf` (byte-for-byte original, never a
+  re-render), delete the old file, then bump TOGETHER `GUIDE_URL` (src/app.jsx), `GUIDE` and
+  `GUIDE_CACHE` (src/service-worker.src.js, e.g. `flightcard-guide-v2`), update the expected file
+  name/page count in domtest20/21/22 and tools/check_offline_chrome.js, and rebuild. The old
+  `flightcard-guide-*` cache is deleted by the activate filter. The README link label
+  "README — HOW THE APP WORKS" is quoted in the guide (slides 18 and 33) — don't rename it.
+- Tests: domtest20 (build artefacts, registration, manifest, the guide file itself), domtest21 (runs the built SW
   against simulated Cache Storage/network). jsdom cannot run a real SW: for a real-browser
   check run `npm run check:offline` (headless Chrome). Final proof is on the phone in
   airplane mode (README §6).
@@ -169,3 +180,10 @@ should still be bumped every time.
   weight no longer counts it — don't update mid-shift with a patient or refuel already entered.
   Reopening a confirmed refuel and pressing CANCEL keeps the confirmed figure (only a fresh,
   unconfirmed tick is undone by CANCEL).
+- 19.11.2026 (v19) — UPLIFT tab: link to the crew guide (PDF), saved for offline use. README link kept
+  below it (label unchanged; subtext now "Full calculations on GitHub (needs signal).").
+  tools/check_offline_chrome.js now reads the current APP_VERSION instead of a hard-coded "v8", and
+  checks the IFR tab by its disclaimer (the old "AW169 CROSS-CHECK" heading no longer exists).
+  OUTSTANDING: Ed's iPhone check that the home-screen app's in-app browser sheet opens the guide
+  offline (flight mode, app closed and reopened, tap USER GUIDE, Done returns to the card intact).
+  If it fails: do not improvise — choose between an in-app slide viewer and accepting "needs signal".

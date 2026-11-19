@@ -13,7 +13,7 @@ const res = [];
 const check = (n, ok) => res.push([n, !!ok]);
 
 function makeWorld(opts = {}) {
-  const net = { mode: "online", body: "BUILD-A", status: 200, delay: 0 };
+  const net = { mode: "online", body: "BUILD-A", status: 200, delay: 0, guideStatus: 200 };
   const log = [];
   const urlOf = (r) => (typeof r === "string" ? r : r.url);
   const strip = (u) => u.split("?")[0];
@@ -22,6 +22,7 @@ function makeWorld(opts = {}) {
     log.push({ url, cache: init.cache || (typeof input === "object" ? input.cache : undefined) });
     if (net.delay) await sleep(net.delay);
     if (net.mode === "offline") throw new TypeError("Failed to fetch");
+    if (url.endsWith("crew-guide-v1.pdf")) return new Response(net.guideStatus === 200 ? "%PDF-GUIDE" : "not found", { status: net.guideStatus, headers: { "Content-Type": "application/pdf" } });
     const body = url.endsWith("manifest.json") ? '{"name":"x"}' : url.includes("fonts.") ? "font-" + net.body : net.body;
     return new Response(body, { status: net.status, headers: { "Content-Type": "text/html" } });
   };
@@ -163,6 +164,48 @@ const nav = (url = SCOPE) => ({ url, method: "GET", mode: "navigate", destinatio
   B.net.mode = "offline";
   r = await B.request(nav());
   check("Cache Storage unavailable + no signal: offline notice, no throw", r.resp.status === 503);
+
+  // ── crew guide (own cache, kept across deploys) ──
+  const GUIDE_URL = SCOPE + "crew-guide-v1.pdf", GUIDES = "flightcard-guide-v1";
+  const guideReq = () => ({ url: GUIDE_URL, method: "GET", mode: "navigate", destination: "document" });
+  const guideFetches = (X) => X.log.filter((l) => l.url === GUIDE_URL).length;
+  let G = makeWorld();
+  await G.install();
+  check("install caches the guide in its own cache (cache: 'reload')", (await G.cached(GUIDES, GUIDE_URL)) === "%PDF-GUIDE" && G.log.some((l) => l.url === GUIDE_URL && l.cache === "reload"));
+  check("…after the shell (shell fetched first)", G.log.findIndex((l) => l.url === INDEX) < G.log.findIndex((l) => l.url === GUIDE_URL));
+  await G.store.get(GUIDES); (await G.seed("flightcard-guide-v0")); (await G.seed("flightcard-20261101-bbbbbbbbbb"));
+  await G.activate();
+  check("activate keeps the guide cache; drops older flightcard-guide-* and old build caches", G.store.has(GUIDES) && !G.store.has("flightcard-guide-v0") && !G.store.has("flightcard-20261101-bbbbbbbbbb") && G.store.has(CACHE));
+  // a deploy: a new worker installs over the same Cache Storage — the guide is NOT fetched again
+  const before = guideFetches(G);
+  G.handlers.install && (await G.install());
+  check("a new install with the guide already cached does not download it again", guideFetches(G) === before);
+  G.net.mode = "offline";
+  r = await G.request(guideReq());
+  check("guide offline: served from its cache (200, the PDF)", r.intercepted && r.resp.status === 200 && (await r.resp.text()) === "%PDF-GUIDE");
+  G.net.mode = "online";
+  const n0 = guideFetches(G);
+  r = await G.request(guideReq()); await r.done();
+  check("guide cached + online: no background refresh (immutable under its name)", guideFetches(G) === n0);
+  // install where the guide can't be fetched: the install still succeeds
+  const G2 = makeWorld(); G2.net.guideStatus = 404;
+  let g2ok = true; try { await G2.install(); } catch { g2ok = false; }
+  check("guide missing on the server: install still succeeds, shell cached, guide not cached", g2ok && (await G2.cached(CACHE, INDEX)) === "BUILD-A" && (await G2.cached(GUIDES, GUIDE_URL)) === null);
+  G2.net.guideStatus = 200;
+  r = await G2.request(guideReq()); await r.done();
+  check("guide not cached yet + online: fetched from the network and stored", (await r.resp.text()) === "%PDF-GUIDE" && (await G2.cached(GUIDES, GUIDE_URL)) === "%PDF-GUIDE");
+  const G3 = makeWorld(); G3.net.mode = "offline";
+  r = await G3.request(guideReq());
+  const gtext = await r.resp.text();
+  check("guide not cached + no signal: calm 503 notice, no throw", r.resp.status === 503 && gtext.includes("Crew guide not saved on this phone yet. Open it once with signal."));
+  const G4 = makeWorld({ brokenCaches: true });
+  r = await G4.request(guideReq());
+  check("Cache Storage unavailable + signal: guide served from the network", (await r.resp.text()) === "%PDF-GUIDE");
+  G4.net.mode = "offline";
+  r = await G4.request(guideReq());
+  check("Cache Storage unavailable + no signal: guide notice (503), no throw", r.resp.status === 503);
+  r = await G.request({ url: SCOPE + "manifest.json", method: "GET", mode: "no-cors", destination: "manifest" });
+  check("other same-origin assets still go through the normal cache-first path", r.intercepted && (await r.resp.text()).includes("name"));
 
   let fail = 0;
   for (const [n, ok] of res) { console.log((ok ? "PASS" : "FAIL") + "  " + n); if (!ok) fail++; }

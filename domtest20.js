@@ -78,6 +78,16 @@ check("apple-mobile-web-app standalone meta tags kept", html.includes('name="app
   const ok = await run(() => Promise.resolve({}));
   check("registration succeeds: registers ./service-worker.js after load, app unchanged", ok.registered === "./service-worker.js" && ok.text.includes("FLT MIN") && ok.errors.length === 0);
 
+  // ── crew guide: the real file is in the repo, and the worker knows it ──
+  check("built service-worker.js names crew-guide-v1.pdf and its cache flightcard-guide-v1", sw.includes('"./crew-guide-v1.pdf"') && sw.includes('"flightcard-guide-v1"'));
+  const guidePath = "./crew-guide-v1.pdf";
+  const pdf = fs.existsSync(guidePath) ? fs.readFileSync(guidePath) : Buffer.alloc(0);
+  const pages = (pdf.toString("latin1").match(/\/Type\s*\/Page(?![s\w])/g) || []).length;
+  check(`crew-guide-v1.pdf at the repo root: ${pdf.length} bytes (> 4 MB), starts %PDF, ${pages} pages (33) — not an LFS pointer, empty or regenerated file`,
+    pdf.length > 4000000 && pdf.slice(0, 4).toString("latin1") === "%PDF" && pages === 33);
+  const ignore = fs.existsSync("./.gitignore") ? fs.readFileSync("./.gitignore", "utf8") : "";
+  check("crew guide not excluded by .gitignore", !/(^|\n)\s*(\*\.pdf|crew-guide[^\n]*)\s*(\n|$)/.test(ignore));
+
   let fail2 = 0;
   for (const [n, k] of res) { console.log((k ? "PASS" : "FAIL") + "  " + n); if (!k) fail2++; }
   process.exit(fail2 ? 1 : 0);
