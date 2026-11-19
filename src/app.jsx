@@ -83,7 +83,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v17";
+const APP_VERSION = "v18";
 // The user guide (rendered on GitHub). Opening it needs signal; the app itself does not.
 const README_URL = "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md";
 const BUILD_DATE = typeof window !== "undefined" && window.__BUILD_DATE__ ? window.__BUILD_DATE__ : "";
@@ -679,14 +679,15 @@ function makeCardPdf(card, rowGW, bst) {
     const zulu = bst ? zuluFromLocal(r.shtdwn, true) : null;
     const w = rowGW(r, i);
     const flags = [];
-    if (r.refuel) flags.push(r.upliftL ? `REFUEL ${r.upliftL} L` : "REFUEL");
+    const pt = r.patient ? parseNum(r.patientKg) : null;
+    if (r.refuel) {
+      const to = parseNum(r.refuelTo) !== null ? parseNum(r.refuelTo) : parseNum(card.plannedFuel);
+      const note = r.refuelNote ? ` - ${pdfText(r.refuelNote).toUpperCase()}` : "";
+      flags.push(to !== null ? `REFUEL TO ${to} KG${r.upliftL ? ` ${r.upliftL} L` : ""}${note}` : r.upliftL ? `REFUEL ${r.upliftL} L${note}` : `REFUEL${note}`);
+    }
     if (card.powerChecks.some((p) => p.row === i)) flags.push("PWR CHECK");
-    if (r.hems)
-      flags.push(
-        `HEMS${r.hemsGrid && r.hemsGrid !== "N/A" && r.hemsGrid !== "…" ? " " + r.hemsGrid : ""}${
-          r.patientKg ? ` PT ${r.patientKg} KG` : ""
-        }`
-      );
+    if (r.hems) flags.push(`HEMS${r.hemsGrid && r.hemsGrid !== "N/A" && r.hemsGrid !== "…" ? " " + r.hemsGrid : ""}`);
+    if (pt) flags.push(`PT ${pt} KG`);
 
     doc.setFont("courier", "bold");
     doc.setFontSize(9.5);
@@ -710,7 +711,7 @@ function makeCardPdf(card, rowGW, bst) {
       doc.setFontSize(8.5);
       doc.setTextColor(...(bad ? [200, 120, 0] : [110, 110, 110]));
       doc.text(
-        `    DEP GW ${w.toFixed(0)}KG${overAum ? " — OVER AUM" : ""} · VAR ${fmtMargin(perfVarRow)} · VERT ${fmtMargin(perfVertRow)}`,
+        `    DEP GW ${w.toFixed(0)}KG${pt ? ` (PT ${pt})` : ""}${overAum ? " — OVER AUM" : ""} · VAR ${fmtMargin(perfVarRow)} · VERT ${fmtMargin(perfVertRow)}`,
         M,
         y
       );
@@ -720,8 +721,9 @@ function makeCardPdf(card, rowGW, bst) {
       doc.setFont("courier", "normal");
       doc.setFontSize(8.5);
       doc.setTextColor(0, 130, 60);
-      doc.text("    " + flags.join("  ·  "), M, y);
-      y += 4.2;
+      const fl = doc.splitTextToSize("    " + flags.join("  ·  "), W - 2 * M);
+      doc.text(fl, M, y);
+      y += fl.length * 4.2;
     }
     if (r.notes) {
       doc.setFont("courier", "normal");
@@ -819,9 +821,12 @@ function freshRow() {
     notes: "",
     refuel: false,
     upliftL: "",
-    hems: false,
+    hems: false, // this flight LANDS at a scene (grid captured here)
     hemsGrid: "",
-    patientKg: "",
+    patient: false, // this flight CARRIES a patient (set when the previous row ticks HEMS)
+    patientKg: "", // weight of the patient this flight carries
+    refuelTo: "", // kg the aircraft was refuelled to after this flight ("" = planned fuel)
+    refuelNote: "",
   };
 }
 
@@ -879,6 +884,8 @@ function FlightCard({
   const [carryOver, setCarryOver] = useState(false);
   const [saveState, setSaveState] = useState("idle");
   const [powerCheckAsk, setPowerCheckAsk] = useState(null);
+  // Refuel confirmation panel (screen-only until CONFIRM): { row, mode: "plan" | "other", to, note, reopen }
+  const [refuelPanel, setRefuelPanel] = useState(null);
   const [lastReg, setLastReg] = useState(null);
   const [exporting, setExporting] = useState(false);
   const [history, setHistory] = useState([]); // previous cards, newest first
@@ -1062,31 +1069,61 @@ function FlightCard({
   // If planned fuel and this row's landed fuel are known, work
   // the litres out right here using the uplift tab's density —
   // no tab switch. Falls back to the uplift tab if data is missing.
+  // Ticking REFUEL opens a confirmation (refuel to planned, or another figure). Nothing is saved
+  // until CONFIRM, so closing the panel any other way leaves the row unrefuelled.
+  const density = () => parseNum(upliftDensity) || 0.79;
+  const litresFor = (toKg, landed) => Math.round(Math.max(0, toKg - landed) / density());
+  const refuelProblem = (toKg, landed) =>
+    toKg === null ? "" : toKg > AC.usable_fuel_kg ? `ABOVE USABLE FUEL ${AC.usable_fuel_kg} KG` : landed !== null && toKg < landed ? "BELOW FUEL ALREADY ON BOARD" : "";
+  const confirmRefuel = (i, toKg, note) => {
+    const landed = parseNum(card.rows[i].fuel);
+    updateRow(i, { refuel: true, refuelTo: String(toKg), refuelNote: (note || "").trim(), upliftL: String(litresFor(toKg, landed)) });
+    setRefuelPanel(null);
+  };
+  // Small inline inputs (refuel panel, patient KG) need a visible box — they can start empty.
+  const boxedInput = { background: C.bg, border: `1px solid ${C.cyan}`, borderRadius: 5, padding: "3px 6px", boxSizing: "border-box" };
+  const closeRefuelPanel = () => setRefuelPanel(null); // unconfirmed → nothing was saved
+  const reopenRefuel = (i) => {
+    const row = card.rows[i];
+    const planned = parseNum(card.plannedFuel);
+    const other = parseNum(row.refuelTo) !== planned;
+    setRefuelPanel({ row: i, mode: other ? "other" : "plan", to: other ? row.refuelTo : "", note: row.refuelNote || "", reopen: true });
+  };
   const toggleRefuel = (i) => {
     const row = card.rows[i];
+    if (refuelPanel && refuelPanel.row === i && !row.refuel) {
+      closeRefuelPanel(); // ticked, not confirmed, unticked again
+      return;
+    }
     if (row.refuel) {
-      updateRow(i, { refuel: false, upliftL: "" });
+      updateRow(i, { refuel: false, upliftL: "", refuelTo: "", refuelNote: "" });
+      if (refuelPanel && refuelPanel.row === i) closeRefuelPanel();
       return;
     }
     const planned = parseNum(card.plannedFuel);
     const landed = parseNum(row.fuel);
-    const d = parseNum(upliftDensity) || 0.79;
     if (planned !== null && landed !== null) {
-      const upliftKg = Math.max(0, planned - landed);
-      updateRow(i, { refuel: true, upliftL: (upliftKg / d).toFixed(0) });
+      setRefuelPanel({ row: i, mode: "plan", to: "", note: "", reopen: false });
     } else {
       updateRow(i, { refuel: true });
       onRefuel(row.fuel, i);
     }
   };
 
+  // HEMS on row i = this flight lands at a scene: the patient boards there, so they are on
+  // board for the NEXT flight (row i + 1), which is flagged as carrying them.
   const toggleHems = (i) => {
     const row = card.rows[i];
     if (row.hems) {
-      updateRow(i, { hems: false, hemsGrid: "" });
+      // Clear the next row's patient flag only if no weight has been entered there.
+      const rows = card.rows.map((r, idx) =>
+        idx === i ? { ...r, hems: false, hemsGrid: "" } : idx === i + 1 && !String(r.patientKg || "").trim() ? { ...r, patient: false } : r
+      );
+      update({ rows });
       return;
     }
-    updateRow(i, { hems: true, hemsGrid: "…" });
+    const rows = card.rows.map((r, idx) => (idx === i ? { ...r, hems: true, hemsGrid: "…" } : idx === i + 1 ? { ...r, patient: true } : r));
+    update({ rows });
     if (!navigator.geolocation) {
       updateRowAsync(i, { hemsGrid: "N/A" });
       return;
@@ -1126,9 +1163,15 @@ function FlightCard({
       // planned fuel, so the departure weight is GW DEP + (startFuel − planned).
       const flown = (r) => Boolean(r.fltTime || r.fuel || r.shtdwn);
       const lastFlown = [...card.rows].reverse().find(flown);
-      if (lastFlown && !lastFlown.refuel && parseNum(lastFlown.fuel) !== null) {
+      if (lastFlown && lastFlown.refuel) {
+        // refuelled after the last flight: to its confirmed figure ("" = planned)
+        const to = parseNum(lastFlown.refuelTo);
+        if (to !== null && to !== parseNum(card.plannedFuel)) next.startFuel = String(to);
+      } else if (lastFlown && parseNum(lastFlown.fuel) !== null) {
         next.startFuel = String(parseNum(lastFlown.fuel));
       }
+      // HEMS on the last sector: the patient is on board for flight 1 of the new card.
+      if (card.rows[card.rows.length - 1].hems) next.rows[0].patient = true;
       // SRP increments if numeric, else copies verbatim
       next.srp = /^\d+$/.test(card.srp) ? String(parseInt(card.srp, 10) + 1) : card.srp;
       // Maintenance countdown continues: new AVAILABLE = old REMAINING
@@ -1144,7 +1187,7 @@ function FlightCard({
 
   // Departure fuel per flight (post-flight data collation rules):
   //   flight 1            → planned fuel
-  //   after a refuel      → planned fuel (refuelled back to plan)
+  //   after a refuel      → the confirmed refuel-to figure ("" / old rows = planned fuel)
   //   otherwise           → previous flight's landed fuel
   const depFuel = (i) => {
     const planned = parseNum(card.plannedFuel);
@@ -1153,7 +1196,10 @@ function FlightCard({
       return start !== null ? start : planned;
     }
     const prev = card.rows[i - 1];
-    if (prev.refuel) return planned;
+    if (prev.refuel) {
+      const to = parseNum(prev.refuelTo);
+      return to !== null ? to : planned;
+    }
     return parseNum(prev.fuel);
   };
 
@@ -1164,7 +1210,7 @@ function FlightCard({
     const planned = parseNum(card.plannedFuel);
     const dep = depFuel(i);
     if (gwd === null || planned === null || dep === null) return null;
-    const patient = row.hems ? parseNum(row.patientKg) || 0 : 0;
+    const patient = row.patient ? parseNum(row.patientKg) || 0 : 0; // the patient this flight carries
     return gwd + (dep - planned) + patient;
   };
 
@@ -1394,10 +1440,14 @@ function FlightCard({
           <input
             value={row.fuel}
             inputMode="numeric"
-            onChange={(e) => updateRow(i, { fuel: SAN.int(e.target.value) })}
+            onChange={(e) => {
+              const v = SAN.int(e.target.value);
+              const to = parseNum(row.refuelTo), landed = parseNum(v);
+              updateRow(i, row.refuel && to !== null && landed !== null ? { fuel: v, upliftL: String(litresFor(to, landed)) } : { fuel: v });
+            }}
             style={{ ...inputStyle(15), display: "block", width: "100%" }}
           />
-          {row.upliftL && (
+          {row.upliftL && !row.refuelTo && (
             <span style={{ display: "block", color: C.green, fontFamily: mono, fontSize: 12, fontWeight: 600, marginTop: 3 }}>
               ↑ {row.upliftL} L
             </span>
@@ -1406,9 +1456,100 @@ function FlightCard({
 
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
           <span style={{ ...label(), fontSize: 9, marginBottom: 0, letterSpacing: "0.1em" }}>REFUEL</span>
-          <CheckBox checked={row.refuel} onToggle={() => toggleRefuel(i)} />
+          <span data-refuel-box={i}>
+            <CheckBox checked={row.refuel || (refuelPanel !== null && refuelPanel.row === i)} onToggle={() => toggleRefuel(i)} />
+          </span>
         </div>
       </div>
+
+      {refuelPanel && refuelPanel.row === i
+        ? (() => {
+            const planned = parseNum(card.plannedFuel);
+            const landed = parseNum(row.fuel);
+            const P = refuelPanel;
+            const to = P.mode === "plan" ? planned : parseNum(P.to);
+            const problem = refuelProblem(to, landed);
+            const can = to !== null && landed !== null && !problem;
+            const txt = { fontFamily: mono, fontSize: 12, fontWeight: 600, color: C.white };
+            const small = { ...label(), fontSize: 9, marginBottom: 0, letterSpacing: "0.1em" };
+            return (
+              <div data-refuel-panel={i} style={{ margin: "8px 0 0 28px", padding: "9px 10px", border: `1px solid ${C.green}80`, borderRadius: 8, background: C.inputBg }}>
+                {P.mode === "plan" ? (
+                  <>
+                    <div style={txt}>Refuel to planned fuel, {planned} kg?</div>
+                    <div style={{ ...txt, color: C.grey, fontSize: 11, marginTop: 3 }}>
+                      Uplift {Math.max(0, planned - landed)} kg = {litresFor(planned, landed)} L at {density()}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={small}>REFUEL TO</span>
+                      <input
+                        data-refuel-to={i}
+                        value={P.to}
+                        inputMode="numeric"
+                        autoFocus={!P.reopen}
+                        onChange={(e) => setRefuelPanel({ ...P, to: SAN.int(e.target.value) })}
+                        style={{ ...inputStyle(15), ...boxedInput, flex: "none", width: 70 }}
+                      />
+                      <span style={small}>KG</span>
+                      <span data-refuel-litres={i} style={{ fontFamily: mono, fontSize: 12, fontWeight: 600, color: C.green }}>
+                        {to !== null && landed !== null ? `↑ ${litresFor(to, landed)} L` : ""}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7 }}>
+                      <span style={small}>NOTE</span>
+                      <input
+                        data-refuel-note={i}
+                        value={P.note}
+                        autoCapitalize="characters"
+                        onChange={(e) => setRefuelPanel({ ...P, note: e.target.value })}
+                        style={{ ...inputStyle(13), ...boxedInput, flex: 1, minWidth: 0, textTransform: "uppercase" }}
+                      />
+                    </div>
+                  </>
+                )}
+                {problem && (
+                  <div data-refuel-problem={i} style={{ marginTop: 6, fontFamily: mono, fontSize: 11, fontWeight: 700, color: C.amber }}>
+                    {problem}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <button
+                    data-refuel-confirm={i}
+                    disabled={!can}
+                    onClick={() => can && confirmRefuel(i, to, P.mode === "plan" ? "" : P.note)}
+                    style={{ ...miniBtn(C.green), flex: 1, padding: "8px 4px", fontSize: 10.5, whiteSpace: "nowrap", opacity: can ? 1 : 0.4 }}
+                  >
+                    CONFIRM {to !== null ? `${to} KG` : ""}
+                  </button>
+                  {P.mode === "plan" ? (
+                    <button data-refuel-other={i} onClick={() => setRefuelPanel({ ...P, mode: "other", to: "" })} style={{ ...miniBtn(C.cyan), flex: 1, padding: "8px 4px", fontSize: 10.5, whiteSpace: "nowrap" }}>
+                      OTHER FIGURE
+                    </button>
+                  ) : null}
+                  {(P.mode === "other" || P.reopen) && (
+                    <button data-refuel-cancel={i} onClick={closeRefuelPanel} style={{ ...miniBtn(C.grey), flex: 1, padding: "8px 4px", fontSize: 10.5, whiteSpace: "nowrap" }}>
+                      CANCEL
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })()
+        : row.refuel &&
+          row.refuelTo && (
+            <button
+              data-refuel-done={i}
+              onClick={() => reopenRefuel(i)}
+              style={{ display: "block", margin: "6px 0 0 28px", padding: 0, background: "none", border: "none", textAlign: "left", cursor: "pointer", fontFamily: mono, fontSize: 12, fontWeight: 600, color: C.green }}
+            >
+              REFUELLED TO {row.refuelTo} KG · ↑ {row.upliftL} L
+              {parseNum(row.refuelTo) !== parseNum(card.plannedFuel) && <span style={{ color: C.amber }}> · NOT PLANNED FUEL</span>}
+              {row.refuelNote && <span style={{ display: "block", color: C.grey, fontWeight: 500, marginTop: 2, textTransform: "uppercase" }}>{row.refuelNote}</span>}
+            </button>
+          )}
 
       <div style={{ display: "flex", gap: 10, marginTop: 8, alignItems: "flex-start" }}>
         <span style={{ width: 18 }} />
@@ -1442,23 +1583,39 @@ function FlightCard({
           )}
         </label>
 
-        {row.hems && (
-          <label style={{ width: 84 }}>
-            <span style={{ ...label(), fontSize: 9, marginBottom: 3, letterSpacing: "0.1em" }}>PATIENT KG</span>
-            <input
-              value={row.patientKg}
-              inputMode="numeric"
-              onChange={(e) => updateRow(i, { patientKg: SAN.int(e.target.value) })}
-              style={{ ...inputStyle(15), display: "block", width: "100%" }}
-            />
-          </label>
-        )}
-
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
           <span style={{ ...label(), fontSize: 9, marginBottom: 0, letterSpacing: "0.1em" }}>HEMS</span>
-          <CheckBox checked={row.hems} onToggle={() => toggleHems(i)} />
+          <span data-hems-box={i}>
+            <CheckBox checked={row.hems} onToggle={() => toggleHems(i)} />
+          </span>
         </div>
       </div>
+
+      {((i > 0 && card.rows[i - 1].hems) || row.patient) && (
+        <div data-patient-line={i} style={{ display: "flex", gap: 10, marginTop: 8, alignItems: "center", paddingLeft: 28 }}>
+          <span data-patient-box={i}>
+            <CheckBox checked={!!row.patient} onToggle={() => updateRow(i, { patient: !row.patient })} />
+          </span>
+          <span style={{ ...label(), display: "inline", fontSize: 10, marginBottom: 0, letterSpacing: "0.1em", color: row.patient ? C.white : C.grey }}>PATIENT ON BOARD</span>
+          {row.patient && (
+            <>
+              <input
+                data-patient-kg={i}
+                value={row.patientKg}
+                inputMode="numeric"
+                onChange={(e) => updateRow(i, { patientKg: SAN.int(e.target.value) })}
+                style={{ ...inputStyle(15), ...boxedInput, flex: "none", width: 64 }}
+              />
+              <span style={{ ...label(), display: "inline", fontSize: 10, marginBottom: 0 }}>KG</span>
+            </>
+          )}
+        </div>
+      )}
+      {row.hems && i === card.rows.length - 1 && (
+        <div data-patient-next-card style={{ marginTop: 6, paddingLeft: 28, fontFamily: mono, fontSize: 11, fontWeight: 600, color: C.green }}>
+          PATIENT GOES ON FLIGHT 1 OF THE NEXT CARD
+        </div>
+      )}
 
       {rowGrossWeight(row, i) !== null &&
         (() => {
@@ -1481,11 +1638,14 @@ function FlightCard({
             // case (over AUM + both margins deep negative) can exceed a 375px viewport, so
             // this scrolls horizontally rather than wrapping or silently clipping a figure.
             <div style={{ marginTop: 8, paddingLeft: 28, overflowX: "auto", WebkitOverflowScrolling: "touch", maxWidth: "100%" }}>
-              <div style={{ fontFamily: mono, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", width: "max-content" }}>
-                <span style={{ color: overAum ? C.amber : C.grey, fontWeight: overAum ? 700 : 600 }}>
-                  DEP GW {w.toFixed(0)}KG
-                  {overAum ? " — OVER AUM" : ""}
-                </span>
+              <div data-depgw={i} style={{ fontFamily: mono, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", width: "max-content" }}>
+                <span style={{ color: overAum ? C.amber : C.grey, fontWeight: overAum ? 700 : 600 }}>DEP GW {w.toFixed(0)}KG</span>
+                {row.patient && parseNum(row.patientKg) ? (
+                  <span data-pt={i} style={{ color: C.white }}>
+                    {" "}(PT {parseNum(row.patientKg)})
+                  </span>
+                ) : null}
+                {overAum && <span style={{ color: C.amber, fontWeight: 700 }}> — OVER AUM</span>}
                 {rowMargin("VAR", varMargin)}
                 {rowMargin("VERT", vertMargin)}
               </div>

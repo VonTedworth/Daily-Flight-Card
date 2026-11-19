@@ -157,3 +157,15 @@ should still be bumped every time.
   (src/ifr-explain.mjs, reads engine figures only) and the full table moves behind a FUEL WORKINGS
   toggle, closed by default. For profile A the sentence also says "(incl. 15 min added to trip)",
   because A's figure includes it. No calculation, data, PDF or storage change.
+- Nov 2026 (v18) — FLIGHTS: (A) HEMS is ticked on the flight that LANDS at the scene; the patient
+  boards there, so ticking HEMS flags the NEXT row `patient: true` and that row's `patientKg` is
+  added to its own DEP GW (`DEP GW 4395KG (PT 85)`). PATIENT KG input moved off the HEMS row to a
+  PATIENT ON BOARD line. Sector 7 HEMS → new card row 1 flagged on carry-over. Unticking HEMS
+  clears the next row's flag only if its weight is empty (Ed unticks it himself). (B) REFUEL now
+  asks for confirmation (planned, or OTHER FIGURE + note), saved as `refuelTo` / `refuelNote` only
+  on CONFIRM; limits: above usable 904 kg or below landed fuel block CONFIRM. depFuel after a
+  refuel = `refuelTo` (old rows without it = planned). Carry-over startFuel = last refuelTo when it
+  differs from planned. OLD ENTRIES ARE NOT MIGRATED: a HEMS row saved before v18 with a patient
+  weight no longer counts it — don't update mid-shift with a patient or refuel already entered.
+  Reopening a confirmed refuel and pressing CANCEL keeps the confirmed figure (only a fresh,
+  unconfirmed tick is undone by CANCEL).

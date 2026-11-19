@@ -1,7 +1,7 @@
 const { JSDOM, VirtualConsole } = require("jsdom");
 const fs = require("fs");
 const seedRows = [
-  { fltTime: "45", shtdwn: "1030", fuel: "380", notes: "", refuel: false, upliftL: "", hems: true, hemsGrid: "TQ301476", patientKg: "85" },
+  { fltTime: "45", shtdwn: "1030", fuel: "380", notes: "", refuel: false, upliftL: "", hems: true, hemsGrid: "TQ301476", patient: true, patientKg: "85" }, // patient carried into flight 1 (e.g. from the previous card)
   ...Array.from({ length: 6 }, () => ({ fltTime: "", shtdwn: "", fuel: "", notes: "", refuel: false, upliftL: "", hems: false, hemsGrid: "", patientKg: "" })),
 ];
 const seedCard = { date: "11.07.2026", acReg: "G-KSST", srp: "1234", gwDep: "4400", varField: "4800",

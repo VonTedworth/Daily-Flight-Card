@@ -3,12 +3,12 @@ const fs = require("fs");
 const mk = (o) => ({ fltTime:"30", shtdwn:"1030", fuel:"", notes:"", refuel:false, upliftL:"", hems:false, hemsGrid:"", patientKg:"", ...o });
 // gwDep 4600, planned 650.
 // FLT1: dep fuel = planned → DEP GW = 4600 (+patient 0). Lands 500.
-// FLT2: no refuel → dep fuel = 500 → GW = 4600 + (500-650) = 4450. HEMS patient 90 → 4540. Lands 350, refuel ticked.
+// FLT2: no refuel → dep fuel = 500 → GW = 4600 + (500-650) = 4450. Carries the patient (FLT1 ticked HEMS) 90 → 4540. Lands 350, refuel ticked (old row, no refuelTo → planned).
 // FLT3: after refuel → dep fuel = planned → GW = 4600. Lands 620 (>650? no, fine).
 // FLT4: no refuel → dep = 620 → GW = 4600 + (620-650) = 4570.
 const rows = [
-  mk({ fuel:"500" }),
-  mk({ fuel:"350", refuel:true, upliftL:"380", hems:true, patientKg:"90" }),
+  mk({ fuel:"500", hems:true }),
+  mk({ fuel:"350", refuel:true, upliftL:"380", patient:true, patientKg:"90" }),
   mk({ fuel:"620" }),
   mk({ fuel:"400" }),
   ...Array.from({length:4},()=>mk({fltTime:"",shtdwn:"",fuel:""})),
