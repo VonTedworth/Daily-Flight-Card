@@ -316,3 +316,12 @@ should still be bumped every time.
   Before → after: B1 reproduction (MISC, flight 1 FUEL KG, a DUTIES tick) 6 failing checks → 0;
   tests 765 → 777 (domtest29 new, 12 checks; includes an edit on a previous card and "no pending save
   = no write"); index.html 1,197,934 → 1,198,069 bytes (gzip 371,813 → 371,831).
+- 20.11.2026 (v30) — Audit T1: golden TEXT snapshots of every PDF (domtest30, tests only; no app
+  change apart from the version). `test-fixtures/golden/`: card-modern (53 lines, from
+  `test-fixtures/modern-card.json`: 4600 note, ground run + v2 power check with repeat and
+  cross-check, HEMS, refuel to planned and to a hand figure, patient over AUM, DUTIES, MISC),
+  ifr-reference (209 lines, EGKR-EGKD-EGKC-EGKR, C, 820 kg), powercheck-image (49) and
+  powercheck-noimage (50). Only the app version (v<N>) and "now" stamps (<DATE>/<TIME>, build date) are
+  normalised. A deliberate PDF change: `GOLDEN_UPDATE=1 node domtest30.js`, review the diff, commit.
+  Mutation check: altering one golden line fails the test. Before → after: tests 777 → 790;
+  index.html 1,198,069 → 1,198,069 bytes (gzip 371,831 → 371,829).

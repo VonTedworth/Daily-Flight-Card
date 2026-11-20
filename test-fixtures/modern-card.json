@@ -1,0 +1,199 @@
+{
+ "_about": "T1 (v30): a full modern card for the golden card-PDF text snapshot. Flight 1 departs 4700 (over 4600, SRP note); flight 2 is a 0-minute ground run with the v2 power check (repeat on ENG 2, cross-check on ENG 1); flight 3 lands at a HEMS scene and is refuelled to planned; flight 4 carries a 250 kg patient (4950, OVER AUM); flight 5 is refuelled to a hand-entered 700 with a note. DUTIES part-done (handover line printed). MISC set.",
+ "date": "14.07.2026",
+ "acReg": "G-KSST",
+ "srp": "1234",
+ "gwDep": "4700",
+ "varField": "4800",
+ "vertField": "4750",
+ "plannedFuel": "650",
+ "startFuel": "",
+ "hoursAvail": "25:30",
+ "sunriseSet": "0459 / 2113",
+ "rows": [
+  {
+   "fltTime": "25",
+   "shtdwn": "0930",
+   "fuel": "560",
+   "notes": "",
+   "refuel": false,
+   "upliftL": "",
+   "hems": false,
+   "hemsGrid": "",
+   "patient": false,
+   "patientKg": "",
+   "refuelTo": "",
+   "refuelNote": ""
+  },
+  {
+   "fltTime": "0",
+   "shtdwn": "1000",
+   "fuel": "540",
+   "notes": "GROUND RUN – POWER CHECK",
+   "refuel": false,
+   "upliftL": "",
+   "hems": false,
+   "hemsGrid": "",
+   "patient": false,
+   "patientKg": "",
+   "refuelTo": "",
+   "refuelNote": ""
+  },
+  {
+   "fltTime": "30",
+   "shtdwn": "1100",
+   "fuel": "480",
+   "notes": "",
+   "refuel": true,
+   "upliftL": "215",
+   "hems": true,
+   "hemsGrid": "TQ 301 476",
+   "patient": false,
+   "patientKg": "",
+   "refuelTo": "650",
+   "refuelNote": ""
+  },
+  {
+   "fltTime": "20",
+   "shtdwn": "1200",
+   "fuel": "600",
+   "notes": "transfer to KCH",
+   "refuel": false,
+   "upliftL": "",
+   "hems": false,
+   "hemsGrid": "",
+   "patient": true,
+   "patientKg": "250",
+   "refuelTo": "",
+   "refuelNote": ""
+  },
+  {
+   "fltTime": "35",
+   "shtdwn": "1330",
+   "fuel": "520",
+   "notes": "",
+   "refuel": true,
+   "upliftL": "228",
+   "hems": false,
+   "hemsGrid": "",
+   "patient": false,
+   "patientKg": "",
+   "refuelTo": "700",
+   "refuelNote": "extra for wx"
+  },
+  {
+   "fltTime": "",
+   "shtdwn": "",
+   "fuel": "",
+   "notes": "",
+   "refuel": false,
+   "upliftL": "",
+   "hems": false,
+   "hemsGrid": "",
+   "patient": false,
+   "patientKg": "",
+   "refuelTo": "",
+   "refuelNote": ""
+  },
+  {
+   "fltTime": "",
+   "shtdwn": "",
+   "fuel": "",
+   "notes": "",
+   "refuel": false,
+   "upliftL": "",
+   "hems": false,
+   "hemsGrid": "",
+   "patient": false,
+   "patientKg": "",
+   "refuelTo": "",
+   "refuelNote": ""
+  }
+ ],
+ "misc": "oil checked, tech log signed",
+ "powerChecks": [
+  {
+   "v": 2,
+   "row": 1,
+   "acReg": "G-KSST",
+   "srp": "1234",
+   "site": "EGKR",
+   "dateZ": "14.07.2026",
+   "timeZ": "09:52",
+   "oat": "12",
+   "qnh": "996",
+   "elev": "222",
+   "paIn": "",
+   "eng": [
+    {
+     "tq": "95",
+     "itt": "745",
+     "ng": "89.7",
+     "rep": null,
+     "xItt": "776",
+     "xNg": "91.5"
+    },
+    {
+     "tq": "95",
+     "itt": "775",
+     "ng": "89.9",
+     "rep": {
+      "tq": "95",
+      "itt": "774",
+      "ng": "89.8"
+     },
+     "xItt": "",
+     "xNg": ""
+    }
+   ],
+   "result": {
+    "paFt": 695,
+    "paSource": "QNH",
+    "chart": "S3-13 Issue 3 Rev 1",
+    "eng": [
+     {
+      "state": "met",
+      "first": {
+       "maxItt": 775,
+       "maxNg": 91.5,
+       "ittMargin": 30,
+       "ngMargin": 1.8,
+       "chartItt": 775.72,
+       "chartNg": 91.571
+      },
+      "rep": null
+     },
+     {
+      "state": "metOnRepeat",
+      "first": {
+       "maxItt": 775,
+       "maxNg": 91.5,
+       "ittMargin": 0,
+       "ngMargin": 1.6,
+       "chartItt": 775.72,
+       "chartNg": 91.571
+      },
+      "rep": {
+       "maxItt": 775,
+       "maxNg": 91.5,
+       "ittMargin": 1,
+       "ngMargin": 1.7,
+       "chartItt": 775.72,
+       "chartNg": 91.571
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "duties": {
+  "acan": true,
+  "hov": true,
+  "notam": true,
+  "wboard": true,
+  "o.bins": true,
+  "o.fcc.tidy": true,
+  "o.fcc.gloves": true,
+  "w.salt": true
+ }
+}
