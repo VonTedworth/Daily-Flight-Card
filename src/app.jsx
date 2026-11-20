@@ -88,7 +88,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v27";
+const APP_VERSION = "v28";
 // The user guide (rendered on GitHub). Opening it needs signal; the app itself does not.
 const README_URL = "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md";
 // The crew guide (40-slide PDF), saved on the phone by the service worker (own cache, kept across
@@ -1608,6 +1608,10 @@ function FlightCard({
           const vt = parseNum(card.varField);
           const vv = parseNum(card.vertField);
           const overAum = w > MTOW;
+          // v28: over 4600 kg → noted on the SRP. Not a fault, so not amber: the figure is underlined
+          // (cyan, the app's information colour; amber + underline when also over AUM). Same rule as
+          // the PDF's NOTE ON SRP line: strictly over 4600, never a 0-minute ground run (no takeoff).
+          const srpNote = w > SRP_NOTE_WT && parseMinutes(row.fltTime) !== 0;
           const varMargin = vt !== null ? vt - w : null; // VAR TOW − this flight's GW
           const vertMargin = vv !== null ? vv - w : null; // VERT TOW − this flight's GW
           const rowMargin = (lab, val) => (
@@ -1622,9 +1626,21 @@ function FlightCard({
             // Fits one line at normal sizes for every realistic combination; the extreme
             // case (over AUM + both margins deep negative) can exceed a 375px viewport, so
             // this scrolls horizontally rather than wrapping or silently clipping a figure.
-            <div style={{ marginTop: 8, paddingLeft: 28, overflowX: "auto", WebkitOverflowScrolling: "touch", maxWidth: "100%" }}>
+            // paddingBottom: room for the 4600 kg underline, which the scroll box would otherwise clip.
+            <div style={{ marginTop: 8, paddingLeft: 28, paddingBottom: 4, overflowX: "auto", WebkitOverflowScrolling: "touch", maxWidth: "100%" }}>
               <div data-depgw={i} style={{ fontFamily: mono, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", width: "max-content" }}>
-                <span style={{ color: overAum ? C.amber : C.grey, fontWeight: overAum ? 700 : 600 }}>DEP GW {w.toFixed(0)}KG</span>
+                <span
+                  data-srp-note={srpNote ? i : undefined}
+                  style={{
+                    color: overAum ? C.amber : srpNote ? C.cyan : C.grey,
+                    fontWeight: overAum ? 700 : 600,
+                    textDecoration: srpNote ? "underline" : "none",
+                    textDecorationThickness: srpNote ? 2 : undefined,
+                    textUnderlineOffset: srpNote ? 4 : undefined,
+                  }}
+                >
+                  DEP GW {w.toFixed(0)}KG
+                </span>
                 {row.patient && parseNum(row.patientKg) ? (
                   <span data-pt={i} style={{ color: C.white }}>
                     {" "}(PT {parseNum(row.patientKg)})

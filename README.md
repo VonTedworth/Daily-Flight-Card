@@ -121,7 +121,7 @@ GW DEP is the baseline weight *at planned fuel*, so any departure fuel simply sh
 
 ### 2.3 Weight thresholds
 
-- **4600 kg is NOT a limit** — it is the maintenance-penalty notation threshold (strictly *over* 4600; exactly 4600 is not flagged). Rows show the plain grey `DEP GW` figure with no annotation (crews know the threshold); the **PDF prints one summary line** — `NOTE ON SRP — GW OVER 4600 KG: FLT 1, FLT 3` — for direct transcription to the SRP. A **0-minute ground run is never listed**: it has no takeoff, so it is not a flight over 4600 (it still shows its DEP GW on screen and in the PDF row).
+- **4600 kg is NOT a limit** — it is the maintenance-penalty notation threshold (strictly *over* 4600; exactly 4600 is not flagged). On the row the `DEP GW` figure is **underlined in cyan** (cyan is the app's information colour, not a warning; nothing extra is added to the line); the **PDF prints one summary line** — `NOTE ON SRP — GW OVER 4600 KG: FLT 1, FLT 3` — for direct transcription to the SRP. A **0-minute ground run is never listed**: it has no takeoff, so it is not a flight over 4600 (it still shows its DEP GW on screen, not underlined, and in the PDF row). Over 4800 kg (AUM) the figure stays bold amber with — OVER AUM, and is underlined too.
 - **`— OVER AUM`** (amber, bold) — the aircraft's all-up mass (4800 kg, not repeated in the wording since the limit is fixed and known); this *is* an exceedance warning. The VAR/VERT margins still print on the same line.
 - VAR / VERT margins: green positive, amber negative. Both TOW figures and the AUM threshold are hard-coded/manual per card.
 

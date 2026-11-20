@@ -303,3 +303,9 @@ should still be bumped every time.
   (`pwrKeep.unrecorded` + `pcHasFigures`) is kept and just moves to that row (FOR: FLIGHT n), time
   and all. RECORD and CANCEL clear `unrecorded`, so the next start is empty; tapping a recorded entry
   still loads that entry. domtest26 section v27.
+- 20.11.2026 (v28) — FLIGHTS, at Ed's request: a departure weight over 4600 kg (SRP notation) is
+  underlined on the row so it catches the eye for the paperwork. Cyan underline (Ed's choice of three
+  options), not amber: it is a note, not a fault. Same rule as the PDF's NOTE ON SRP line: strictly
+  over 4600, never a 0-minute ground run; a planned (not yet flown) row is underlined too. Over AUM
+  keeps bold amber — OVER AUM, also underlined. The DEP GW sideways-scroll box got paddingBottom 4:
+  without it Chrome clipped the underline (seen at 375 px). domtest28.
