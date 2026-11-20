@@ -88,7 +88,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v28";
+const APP_VERSION = "v29";
 // The user guide (rendered on GitHub). Opening it needs signal; the app itself does not.
 const README_URL = "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md";
 // The crew guide (40-slide PDF), saved on the phone by the service worker (own cache, kept across
@@ -870,6 +870,7 @@ function FlightCard({
   const [history, setHistory] = useState([]); // previous cards, newest first
   const [histIdx, setHistIdx] = useState(null); // null = current card
   const saveTimer = useRef(null);
+  const pendingSave = useRef(null); // the card waiting on the 600 ms save delay (null = nothing pending)
   const histIdxRef = useRef(null);
   const historyRef = useRef([]);
   const snapshotRef = useRef(null); // current card while viewing a previous one
@@ -917,7 +918,9 @@ function FlightCard({
   const scheduleSave = useCallback((next) => {
     setSaveState("saving");
     clearTimeout(saveTimer.current);
+    pendingSave.current = next;
     saveTimer.current = setTimeout(async () => {
+      pendingSave.current = null;
       try {
         if (histIdxRef.current === null) {
           await storage.set(STORAGE_KEY, JSON.stringify(next));
@@ -938,6 +941,7 @@ function FlightCard({
   // place, skipping the debounce — used when switching views.
   const flushSave = async (c) => {
     clearTimeout(saveTimer.current);
+    pendingSave.current = null;
     try {
       if (histIdxRef.current === null) {
         await storage.set(STORAGE_KEY, JSON.stringify(c));
@@ -949,6 +953,19 @@ function FlightCard({
       }
     } catch {}
   };
+
+  // B1 (v29): the DAY/NIGHT toggle remounts this component (key={theme} in App). A save still waiting
+  // on the 600 ms delay is written now, before the new instance loads the card from storage, so an
+  // edit made just before the toggle is neither hidden nor overwritten by the next keystroke.
+  // storage.set writes localStorage synchronously, and React runs this clean-up before the new
+  // instance's load effect.
+  useEffect(
+    () => () => {
+      if (pendingSave.current) flushSave(pendingSave.current);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
 
   const openHistory = async (i) => {
     if (!card) return;

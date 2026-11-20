@@ -309,3 +309,10 @@ should still be bumped every time.
   over 4600, never a 0-minute ground run; a planned (not yet flown) row is underlined too. Over AUM
   keeps bold amber — OVER AUM, also underlined. The DEP GW sideways-scroll box got paddingBottom 4:
   without it Chrome clipped the underline (seen at 375 px). domtest28.
+- 20.11.2026 (v29) — Audit B1 fix: typing then switching DAY/NIGHT within the 600 ms save delay lost
+  the edit (the remounted FlightCard loaded the card from before the edit; the next keystroke saved
+  over it). FlightCard now keeps the pending card in `pendingSave` and writes it on unmount
+  (`flushSave`, synchronous localStorage write, which React runs before the new instance's load).
+  Before → after: B1 reproduction (MISC, flight 1 FUEL KG, a DUTIES tick) 6 failing checks → 0;
+  tests 765 → 777 (domtest29 new, 12 checks; includes an edit on a previous card and "no pending save
+  = no write"); index.html 1,197,934 → 1,198,069 bytes (gzip 371,813 → 371,831).
