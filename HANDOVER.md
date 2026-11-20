@@ -360,3 +360,10 @@ should still be bumped every time.
   byte-identical before and after at the same version (sha256 fa7ccef6…, 732,226 bytes; minify strips
   comments), then the version bumped. Before → after: index.html 733,586 → 733,586 (gzip 238,428 →
   238,429); tests 804 → 804.
+- 20.11.2026 (v35) — Audit T6: tests for how each PDF leaves the app (domtest32, tests only; no app
+  change apart from the version). For the card PDF (also with no reg/SRP/date → "AC UNDATED.pdf"), the
+  IFR plan PDF and the power check PDF (also with no reg → "PC_AC_…"): the share sheet gets one file
+  with the exact name, application/pdf, and title = text = the name without ".pdf"; with no share
+  sheet (canShare false, or missing altogether) one `<a download>` link with the same name is clicked,
+  its href is the PDF's blob URL, and that URL is released; the card still moves on to a new card.
+  Before → after: tests 804 → 818; index.html 733,586 → 733,586 (gzip 238,429 → 238,429).
