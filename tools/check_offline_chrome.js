@@ -21,8 +21,8 @@ const check = (n, ok) => { res.push([n, !!ok]); console.log((ok ? "PASS" : "FAIL
 
 fs.rmSync(SITE, { recursive: true, force: true });
 fs.mkdirSync(APP, { recursive: true });
-for (const f of ["index.html", "service-worker.js", "manifest.json", "crew-guide-v1.pdf"]) fs.copyFileSync(path.join(REPO, f), path.join(APP, f));
-const GUIDE_BYTES = fs.statSync(path.join(REPO, "crew-guide-v1.pdf")).size;
+for (const f of ["index.html", "service-worker.js", "manifest.json", "crew-guide-v2.pdf"]) fs.copyFileSync(path.join(REPO, f), path.join(APP, f));
+const GUIDE_BYTES = fs.statSync(path.join(REPO, "crew-guide-v2.pdf")).size;
 const GUIDE_LOG = path.join(SP, "guide-requests.log");
 fs.mkdirSync(path.join(APP, "assets"), { recursive: true });
 fs.copyFileSync(path.join(REPO, "assets", "rfm-fig-s3-13-v1.jpg"), path.join(APP, "assets", "rfm-fig-s3-13-v1.jpg"));
@@ -34,7 +34,7 @@ import http.server, socketserver, time, sys, os
 os.chdir(sys.argv[1]); delay = float(sys.argv[3]); glog = sys.argv[4]
 class H(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
-        if self.path.split('?')[0].endswith('/crew-guide-v1.pdf'):
+        if self.path.split('?')[0].endswith('/crew-guide-v2.pdf'):
             with open(glog, 'a') as f: f.write('GUIDE ')
         if self.path.split('?')[0].endswith('/rfm-fig-s3-13-v1.jpg'):
             with open(glog, 'a') as f: f.write('IMG ')
@@ -68,7 +68,7 @@ const PWR_EXPORT = `(async () => {
     summary: (document.querySelector('[data-pc-summary]') || {}).textContent };
 })()`;
 // fetch the guide from the page (as the app's link would): status, size, and the notice text if any
-const GUIDE_FETCH = `fetch('./crew-guide-v1.pdf').then(async r => { const b = await r.arrayBuffer(); return { status: r.status, size: b.byteLength,
+const GUIDE_FETCH = `fetch('./crew-guide-v2.pdf').then(async r => { const b = await r.arrayBuffer(); return { status: r.status, size: b.byteLength,
   text: r.status === 200 ? '' : new TextDecoder().decode(b) }; }).catch(e => ({ status: -1, error: String(e) }))`;
 const stopServer = async () => { if (server) { server.kill("SIGKILL"); server = null; await sleep(400); } };
 
@@ -105,10 +105,10 @@ const stopServer = async () => { if (server) { server.kill("SIGKILL"); server = 
     const firstCache = st && st.keys.find((k) => /^flightcard-\d{8}/.test(k));
     let guideOk = false;
     for (let i = 0; i < 60 && !guideOk; i++) {
-      guideOk = await js(`caches.has('flightcard-guide-v1').then(h => h ? caches.open('flightcard-guide-v1').then(c => c.match(new URL('./crew-guide-v1.pdf', location.href).href)).then(m => !!m) : false)`);
+      guideOk = await js(`caches.has('flightcard-guide-v2').then(h => h ? caches.open('flightcard-guide-v2').then(c => c.match(new URL('./crew-guide-v2.pdf', location.href).href)).then(m => !!m) : false)`);
       if (!guideOk) await sleep(250);
     }
-    check("crew guide cached in its own cache flightcard-guide-v1", guideOk);
+    check("crew guide cached in its own cache flightcard-guide-v2", guideOk);
     let imgOk = false;
     for (let i = 0; i < 60 && !imgOk; i++) { imgOk = await js(IMG_CACHED); if (!imgOk) await sleep(250); }
     check("RFM chart image cached in its own cache flightcard-assets-v1 after the first load", imgOk);
@@ -161,7 +161,7 @@ const stopServer = async () => { if (server) { server.kill("SIGKILL"); server = 
     check(`mid-session deploy: open page is not swapped under the user (still ${V0})`, new RegExp(V0 + " · ").test(midText));
     const keysMid = await js(`caches.keys()`);
     check("new version installed in the background (new cache, old purged)", keysMid.some((k) => k.endsWith("-deploy2")) && !keysMid.includes(firstCache));
-    check("deploy: crew guide cache kept (flightcard-guide-v1)", keysMid.includes("flightcard-guide-v1"));
+    check("deploy: crew guide cache kept (flightcard-guide-v2)", keysMid.includes("flightcard-guide-v2"));
     check(`deploy: crew guide NOT downloaded again (${guideGets() - guideGetsBeforeDeploy} requests)`, guideGets() === guideGetsBeforeDeploy);
     check("deploy: RFM image cache kept (flightcard-assets-v1)", keysMid.includes("flightcard-assets-v1"));
     check(`deploy: RFM image NOT downloaded again (${imgGets() - imgGetsBeforeDeploy} requests)`, imgGets() === imgGetsBeforeDeploy);
@@ -176,7 +176,7 @@ const stopServer = async () => { if (server) { server.kill("SIGKILL"); server = 
     check(`next launch with NO signal: still ${V1} from the new cache`, new RegExp(V1 + " · ").test(f.text) && f.text.includes("FLT MIN"));
 
     // ── F. guide never saved on this phone, no signal ──
-    await js(`caches.delete('flightcard-guide-v1')`);
+    await js(`caches.delete('flightcard-guide-v2')`);
     const gNone = await js(GUIDE_FETCH);
     check("guide not saved + NO signal: calm 503 notice", gNone && gNone.status === 503 && gNone.text.includes("Crew guide not saved on this phone yet. Open it once with signal."));
     check("…and the app page is unaffected", (await appText()).includes("FLT MIN"));

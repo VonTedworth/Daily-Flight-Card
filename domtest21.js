@@ -23,7 +23,7 @@ function makeWorld(opts = {}) {
     if (net.delay) await sleep(net.delay);
     if (net.mode === "offline") throw new TypeError("Failed to fetch");
     if (url.endsWith("rfm-fig-s3-13-v1.jpg")) return new Response(net.imgStatus === 200 ? "JPEG-RFM" : "not found", { status: net.imgStatus, headers: { "Content-Type": "image/jpeg" } });
-    if (url.endsWith("crew-guide-v1.pdf")) return new Response(net.guideStatus === 200 ? "%PDF-GUIDE" : "not found", { status: net.guideStatus, headers: { "Content-Type": "application/pdf" } });
+    if (url.endsWith("crew-guide-v2.pdf")) return new Response(net.guideStatus === 200 ? "%PDF-GUIDE" : "not found", { status: net.guideStatus, headers: { "Content-Type": "application/pdf" } });
     const body = url.endsWith("manifest.json") ? '{"name":"x"}' : url.includes("fonts.") ? "font-" + net.body : net.body;
     return new Response(body, { status: net.status, headers: { "Content-Type": "text/html" } });
   };
@@ -167,16 +167,16 @@ const nav = (url = SCOPE) => ({ url, method: "GET", mode: "navigate", destinatio
   check("Cache Storage unavailable + no signal: offline notice, no throw", r.resp.status === 503);
 
   // ── crew guide (own cache, kept across deploys) ──
-  const GUIDE_URL = SCOPE + "crew-guide-v1.pdf", GUIDES = "flightcard-guide-v1";
+  const GUIDE_URL = SCOPE + "crew-guide-v2.pdf", GUIDES = "flightcard-guide-v2";
   const guideReq = () => ({ url: GUIDE_URL, method: "GET", mode: "navigate", destination: "document" });
   const guideFetches = (X) => X.log.filter((l) => l.url === GUIDE_URL).length;
   let G = makeWorld();
   await G.install();
   check("install caches the guide in its own cache (cache: 'reload')", (await G.cached(GUIDES, GUIDE_URL)) === "%PDF-GUIDE" && G.log.some((l) => l.url === GUIDE_URL && l.cache === "reload"));
   check("…after the shell (shell fetched first)", G.log.findIndex((l) => l.url === INDEX) < G.log.findIndex((l) => l.url === GUIDE_URL));
-  await G.store.get(GUIDES); (await G.seed("flightcard-guide-v0")); (await G.seed("flightcard-20261101-bbbbbbbbbb"));
+  await G.store.get(GUIDES); (await G.seed("flightcard-guide-v1")); (await G.seed("flightcard-20261101-bbbbbbbbbb"));
   await G.activate();
-  check("activate keeps the guide cache; drops older flightcard-guide-* and old build caches", G.store.has(GUIDES) && !G.store.has("flightcard-guide-v0") && !G.store.has("flightcard-20261101-bbbbbbbbbb") && G.store.has(CACHE));
+  check("activate keeps the guide cache; drops the old flightcard-guide-v1 (v19–v25 guide) and old build caches", G.store.has(GUIDES) && !G.store.has("flightcard-guide-v1") && !G.store.has("flightcard-20261101-bbbbbbbbbb") && G.store.has(CACHE));
   // a deploy: a new worker installs over the same Cache Storage — the guide is NOT fetched again
   const before = guideFetches(G);
   G.handlers.install && (await G.install());
@@ -218,7 +218,7 @@ const nav = (url = SCOPE) => ({ url, method: "GET", mode: "navigate", destinatio
     (await I.cached(ASSETS, IMG_URL)) === "JPEG-RFM" && I.log.some((l) => l.url === IMG_URL && l.cache === "reload") && I.log.findIndex((l) => l.url === INDEX) < I.log.findIndex((l) => l.url === IMG_URL));
   await I.seed("flightcard-assets-v0");
   await I.activate();
-  check("activate keeps flightcard-assets-v1 (and the guide), drops flightcard-assets-v0", I.store.has(ASSETS) && I.store.has("flightcard-guide-v1") && !I.store.has("flightcard-assets-v0"));
+  check("activate keeps flightcard-assets-v1 (and the guide), drops flightcard-assets-v0", I.store.has(ASSETS) && I.store.has("flightcard-guide-v2") && !I.store.has("flightcard-assets-v0"));
   const i0 = imgFetches(I);
   await I.install();
   check("a deploy (new install) does not download the image again", imgFetches(I) === i0);

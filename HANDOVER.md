@@ -76,17 +76,17 @@ should still be bumped every time.
 - Page = network-first with a 3 s timeout then cache; same-origin assets and Google Fonts =
   cache-first, refreshed in the background (fonts in a separate cache kept across deploys so
   offline layout matches online).
-- Crew guide (`crew-guide-v1.pdf`, ~4 MB, repo root): its own cache `flightcard-guide-v1`, kept
+- Crew guide (`crew-guide-v2.pdf`, ~8.8 MB, 40 slides, repo root): its own cache `flightcard-guide-v2`, kept
   across deploys like the fonts, so a deploy never downloads it again. Cached best-effort at
   install AFTER the shell (never fails or delays the shell); served cache-first with no
   background refresh (immutable under its name); not cached + no signal → a 503 notice
   "Crew guide not saved on this phone yet. Open it once with signal."
 - **Updating the crew guide:** add `crew-guide-vN.pdf` (byte-for-byte original, never a
   re-render), delete the old file, then bump TOGETHER `GUIDE_URL` (src/app.jsx), `GUIDE` and
-  `GUIDE_CACHE` (src/service-worker.src.js, e.g. `flightcard-guide-v2`), update the expected file
+  `GUIDE_CACHE` (src/service-worker.src.js, e.g. `flightcard-guide-v3`), update the expected file
   name/page count in domtest20/21/22 and tools/check_offline_chrome.js, and rebuild. The old
   `flightcard-guide-*` cache is deleted by the activate filter. The README link label
-  "README — HOW THE APP WORKS" is quoted in the guide (slides 18 and 33) — don't rename it.
+  "README — HOW THE APP WORKS" is quoted in the guide (slides 19 and 40) — don't rename it.
 - RFM chart image (`assets/rfm-fig-s3-13-v1.jpg`, ~0.6 MB) for PWR CHK: same pattern as the guide —
   own cache `flightcard-assets-v1` (`RFM_IMG` / `ASSET_CACHE`), cached best-effort at install after
   the shell, kept across deploys, cache-first with no background refresh; not cached + no signal →
@@ -292,3 +292,8 @@ should still be bumped every time.
 - 19.11.2026 (v25) — PWR CHK, at Ed's request: the CHART drop-down starts closed (`pwrKeep.chartOpen`
   false); open it with its arrow, and it stays as left for the session. Screen only — the power check
   PDF always includes the chart.
+- 20.11.2026 (v26) — Crew guide updated to Ed's new 40-slide version (covers v24 DUTIES, the two-row
+  tab bar and v25's closed CHART): `crew-guide-v2.pdf`, byte-for-byte his file (8,772,731 bytes, sha256
+  89a45e6a…), `crew-guide-v1.pdf` deleted. `GUIDE_URL`, `GUIDE` and `GUIDE_CACHE` (`flightcard-guide-v2`) bumped
+  together, so every phone downloads the new guide once (best-effort, after the shell) and the activate
+  filter deletes `flightcard-guide-v1` (domtest21). UPLIFT link text: 40-slide crew guide.

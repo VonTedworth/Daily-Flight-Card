@@ -81,8 +81,8 @@ const def = (patch = {}) => Object.assign({ stops: ["EGKR", "EGKD", "EGKC", "EGK
   check("UPLIFT tab has a README link at the bottom", !!a && a.textContent.includes("README") && a.offsetParent !== undefined);
   check("README link points at the repo README on GitHub and opens in a new tab", a && a.getAttribute("href") === "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md" && a.getAttribute("target") === "_blank" && /noopener/.test(a.getAttribute("rel")));
   const g = d.querySelector("a[data-guide]");
-  check("UPLIFT tab has the crew guide link: ./crew-guide-v1.pdf, new tab, noopener, 'USER GUIDE'",
-    !!g && g.getAttribute("href") === "./crew-guide-v1.pdf" && g.getAttribute("target") === "_blank" && /noopener/.test(g.getAttribute("rel")) && g.textContent.includes("USER GUIDE") && g.textContent.includes("Saved on this phone"));
+  check("UPLIFT tab has the crew guide link: ./crew-guide-v2.pdf, new tab, noopener, 'USER GUIDE'",
+    !!g && g.getAttribute("href") === "./crew-guide-v2.pdf" && g.getAttribute("target") === "_blank" && /noopener/.test(g.getAttribute("rel")) && g.textContent.includes("USER GUIDE") && g.textContent.includes("Saved on this phone"));
   check("README link still there, AFTER the guide link, label unchanged, new subtext",
     !!g && !!a && (g.compareDocumentPosition(a) & w.Node.DOCUMENT_POSITION_FOLLOWING) && a.textContent.includes("README — HOW THE APP WORKS") && a.textContent.includes("Full calculations on GitHub (needs signal).") && !a.textContent.includes("Opens the guide"));
   check("only the guide link has the top divider", g && /1px solid/.test(g.style.borderTop) && !a.style.borderTop && !a.style.paddingTop && a.style.marginTop === "12px");

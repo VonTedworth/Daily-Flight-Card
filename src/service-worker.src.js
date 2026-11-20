@@ -19,11 +19,11 @@ const CACHE = "flightcard-" + BUILD_STAMP;
 // exactly as it does online (layouts such as the one-line flight-row margins depend on it).
 const FONT_CACHE = "flightcard-fonts-v1";
 const FONT_HOSTS = ["fonts.googleapis.com", "fonts.gstatic.com"];
-// The crew guide (PDF, ~4 MB) has its own cache, kept across deploys like the fonts, so a deploy
+// The crew guide (PDF, ~8.8 MB) has its own cache, kept across deploys like the fonts, so a deploy
 // never downloads it again. The file is immutable under its name: a new guide is
-// crew-guide-v2.pdf — bump GUIDE and GUIDE_CACHE together (and GUIDE_URL in app.jsx).
-const GUIDE = "./crew-guide-v1.pdf";
-const GUIDE_CACHE = "flightcard-guide-v1"; // bump together with GUIDE
+// crew-guide-v3.pdf — bump GUIDE and GUIDE_CACHE together (and GUIDE_URL in app.jsx).
+const GUIDE = "./crew-guide-v2.pdf";
+const GUIDE_CACHE = "flightcard-guide-v2"; // bump together with GUIDE
 // The RFM power check chart (Fig S3-13 page image, ~0.6 MB) for the PWR CHK tab: same pattern as
 // the guide — own cache kept across deploys, immutable under its name. A new RFM figure is
 // rfm-fig-s3-13-v2.jpg: bump RFM_IMG and ASSET_CACHE together (and PC_IMAGE in powercheck.js).

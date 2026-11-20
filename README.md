@@ -4,7 +4,7 @@ A self-contained web app (single `index.html`, no server, no accounts) replacing
 
 > **Status of this tool:** aide-mémoire only. It is **not** a certified performance, mass & balance, or flight planning application. Every output must be gross-error checked against the certified sources before use. The calculations below are published in full for exactly that purpose.
 
-**Crew guide:** [crew-guide-v1.pdf](crew-guide-v1.pdf) — the 33-slide how-to-use guide, also linked at the bottom of the UPLIFT tab (**USER GUIDE**) and saved on the phone for use with no signal.
+**Crew guide:** [crew-guide-v2.pdf](crew-guide-v2.pdf) — the 40-slide how-to-use guide, also linked at the bottom of the UPLIFT tab (**USER GUIDE**) and saved on the phone for use with no signal.
 
 One card = **one SRP page** (seven sectors). Several cards per day is normal; see §4 (carry-over).
 
