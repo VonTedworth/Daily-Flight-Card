@@ -8,9 +8,11 @@ crew relies on.
 
 ## Layout
 - `src/app.jsx` — the entire app (React, single file, heavily commented)
-- `build_html.py` — inlines the esbuild bundle into the final HTML with iOS PWA
-  meta tags. NOTE: it currently writes to `/mnt/user-data/outputs/flight-card-app.html`
-  (a Claude sandbox path) — change that output path to `./index.html` first thing.
+- `build_html.py` — inlines the esbuild bundle (`build/app.js`) into `./index.html` with the iOS PWA
+  meta tags and the build date, writes `manifest.json`, and stamps `service-worker.js` from its template.
+- `build/` — esbuild output (generated, not committed): `app.js`, `meta.json` (the metafile the size
+  budget test reads, domtest31) and `fuelcalc.cjs`.
+- `src/stubs/fast-png.js` — stands in for jsPDF's PNG reader (v32, audit F2): the app embeds only a JPEG.
 - `domtest*.js` — jsdom regression tests, run via `npm test`. They load the BUILT
   html, seed localStorage in `beforeParse`, and assert on rendered text/DOM.
   domtest10/11 cover the page split + carry-over; keep them green.
@@ -36,7 +38,6 @@ crew relies on.
 - `src/duties.js` — the DUTIES tab's lists (data only; see "Base duties" below).
 - `test-fixtures/` — the v19 card PDF for a card with pre-v20 power checks (domtest26 proves
   legacy entries still print byte-for-byte the same).
-- `build/` — esbuild output (generated)
 
 ## Commands
     npm install
@@ -351,3 +352,11 @@ should still be bumped every time.
   and without the file at the same version (sha256 e3f52b1a…, 732,226 bytes), then the version bumped.
   Before → after: src/ 4,252 + 1,733 → 4,252 app.jsx lines (backup gone); index.html 733,586 → 733,586
   (gzip 238,429 → 238,428); tests 804 → 804.
+- 20.11.2026 (v34) — Audit F7: stale comments and the HANDOVER layout. `src/app.jsx` header (the v10
+  "UX pass" notes) replaced by a map of the file's sections; the orphan "App shell" banner that sat
+  above the IFR FUEL section moved to `function App()`. HANDOVER Layout: the old note that
+  build_html.py writes to a sandbox path (it writes ./index.html) replaced with what it does; `build/`
+  (app.js, meta.json, fuelcalc.cjs) and `src/stubs/fast-png.js` described. Verified: `build/app.js`
+  byte-identical before and after at the same version (sha256 fa7ccef6…, 732,226 bytes; minify strips
+  comments), then the version bumped. Before → after: index.html 733,586 → 733,586 (gzip 238,428 →
+  238,429); tests 804 → 804.

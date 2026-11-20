@@ -22,19 +22,12 @@ import { pressureAltitude, assess, pcPath, PC_IMAGE } from "./powercheck.js";
 import { DUTIES } from "./duties.js";
 
 // ═══════════════════════════════════════════════════════════
-// Fuel Uplift + Daily Flight Card — v10
-// UX pass:
-//  1. NOW button stamps the shutdown time in one tap.
-//  2. Ticking REFUEL calculates the litres inline on the row
-//     (planned − landed ÷ density) — no tab switch for the
-//     routine case. The uplift tab remains for odd cases.
-//  3. Used flights stay fully expanded; empty rows stay
-//     hidden until needed. Last 4 cards kept for post-editing.
-//  4. DAY/NIGHT theme toggle (day = high contrast for sunlight).
-//  5. Power check is once per card: the 0-minute ground-run
-//     prompt triggers it, or the POWER CHECK button by MISC.
-//     No per-flight checkbox. Since v20 it is worked on its own
-//     PWR CHK tab (RFM Supp 3 Fig S3-13 power assurance check).
+// GAMA KSS Daily Flight Card — the whole app in one file (React). Sections, in order:
+//   storage shim · themes and shared styles · parsing / time / sun / OS grid helpers
+//   UPLIFT (FuelCalc) · card PDF (makeCardPdf) · A/C DATA + FLIGHTS + DUTIES (FlightCard)
+//   DUTIES page (lists in src/duties.js) · IFR FUEL (maths in src/fuelcalc.js) + its PDF
+//   PWR CHK (maths in src/powercheck.js) + its PDF · App shell (tab bar, theme) · mount
+// README.md explains every feature and calculation; HANDOVER.md has the rules and the version log.
 // ═══════════════════════════════════════════════════════════
 
 // localStorage shim with the async storage API shape.
@@ -88,7 +81,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v33";
+const APP_VERSION = "v34";
 // The user guide (rendered on GitHub). Opening it needs signal; the app itself does not.
 const README_URL = "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md";
 // The crew guide (40-slide PDF), saved on the phone by the service worker (own cache, kept across
@@ -2313,10 +2306,6 @@ function DutiesPage({ card, onDuties, open, onOpen }) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// App shell
-// ═══════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════
 // TAB — IFR FUEL planner, MULTI-SECTOR (offline cross-check, AW169)
 // All maths is src/fuelcalc.js — a port of the approved prototype's compute(), with every
 // figure and rule read from the bundled dataset. This file only renders it. The trip is
@@ -4043,6 +4032,10 @@ function PowerCheck({ active, ctx, cardInfo, onRecord, onCancel, keep }) {
     </>
   );
 }
+
+// ═══════════════════════════════════════════════════════════
+// App shell — tab bar, DAY/NIGHT theme, and the state shared between tabs
+// ═══════════════════════════════════════════════════════════
 
 function App() {
   const [tab, setTab] = useState("card");
