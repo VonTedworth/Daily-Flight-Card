@@ -325,3 +325,15 @@ should still be bumped every time.
   normalised. A deliberate PDF change: `GOLDEN_UPDATE=1 node domtest30.js`, review the diff, commit.
   Mutation check: altering one golden line fails the test. Before → after: tests 777 → 790;
   index.html 1,198,069 → 1,198,069 bytes (gzip 371,831 → 371,829).
+- 20.11.2026 (v31) — Audit T5 then F1. T5 (domtest31): `build/app.js` size budget (the size after the
+  last deliberate change + 2 %), read with the esbuild metafile `build/meta.json` that `npm run build`
+  now also writes; first set at 1,196,709 + 2 % and passed on the unchanged build. F1: the build marks
+  jsPDF's `html2canvas`, `canvg` and `dompurify` as `--external`. They serve only `doc.html()` and SVG,
+  which the app never calls (it uses text, lines, rect, circle and one JPEG `addImage`); the bundle
+  keeps three unreached `import("…")` calls. T5 tightened to 798,007 + 2 % = 813,967 and now also fails
+  if any of those libraries (metafile inputs or their code signatures) comes back.
+  Before → after: build/app.js 1,196,709 → 798,007 bytes (−33 %); index.html 1,198,069 → 799,367
+  (gzip 371,829 → 258,513); first render (§1.5 method, median of 7, paired run) 450 → 366 ms, first
+  contentful paint 452 → 332 ms; PDFs text-identical (domtest30); tests 790 → 800; Chrome check 27/27.
+  Test timing note: a suite run while the Mac slept with the lid shut took 5,139 s wall time and the
+  Chrome check's 10 s "flaky signal" step then read 905,783 ms; both re-run awake: green / 27/27.
