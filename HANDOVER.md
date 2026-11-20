@@ -337,3 +337,12 @@ should still be bumped every time.
   contentful paint 452 → 332 ms; PDFs text-identical (domtest30); tests 790 → 800; Chrome check 27/27.
   Test timing note: a suite run while the Mac slept with the lid shut took 5,139 s wall time and the
   Chrome check's 10 s "flaky signal" step then read 905,783 ms; both re-run awake: green / 27/27.
+- 20.11.2026 (v32) — Audit F2: jsPDF's PNG reader is stubbed. The build aliases `fast-png` to
+  `src/stubs/fast-png.js` (decode/encode throw "PNG images are not supported in this build"), which
+  leaves fast-png, pako and iobuffer out; the app's only PDF image is the RFM JPEG. T5 (domtest31)
+  extended: no fast-png/pako/iobuffer input, no PngDecoder, the stub is the input, PNG/pako code
+  signatures absent; budget 732,226 + 2 % = 746,870. If a PNG is ever needed in a PDF, remove the alias
+  and raise the budget in the same version.
+  Before → after: build/app.js 798,007 → 732,226 bytes; index.html 799,367 → 733,586 (gzip 258,513 →
+  238,429); first render (paired, median of 7) 372 → 349 ms, first contentful paint 364 → 312 ms; PDFs
+  text-identical, RFM JPEG still embedded (domtest30); tests 800 → 804; Chrome check 27/27.
