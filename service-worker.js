@@ -13,7 +13,7 @@
  *  - Never throws into the page: every network failure falls back to the cache, and if
  *    nothing is cached either, a small plain offline notice is served.
  */
-const BUILD_STAMP = "20261120-bd07799082";
+const BUILD_STAMP = "20261120-34af4ec45c";
 const CACHE = "flightcard-" + BUILD_STAMP;
 // Web fonts (IBM Plex Mono) are kept across deploys so the offline app looks and measures
 // exactly as it does online (layouts such as the one-line flight-row margins depend on it).

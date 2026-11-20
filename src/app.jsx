@@ -81,7 +81,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v35";
+const APP_VERSION = "v36";
 // The user guide (rendered on GitHub). Opening it needs signal; the app itself does not.
 const README_URL = "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md";
 // The crew guide (40-slide PDF), saved on the phone by the service worker (own cache, kept across
@@ -536,6 +536,25 @@ function FuelCalc({
 // ═══════════════════════════════════════════════════════════
 // PDF export
 // ═══════════════════════════════════════════════════════════
+
+// Every PDF (card, IFR plan, power check) leaves the app here: the share sheet (Mail etc.), or a
+// download where there is none. The subject (share title and text) is the file name without ".pdf".
+// One function since v36 (audit F4); domtest32 pins every name and subject.
+async function shareDocPdf(doc, name) {
+  const subject = name.replace(/\.pdf$/, "");
+  const blob = doc.output("blob");
+  const file = new File([blob], name, { type: "application/pdf" });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    await navigator.share({ files: [file], title: subject, text: subject });
+  } else {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+}
 
 function makeCardPdf(card, rowGW, bst) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
@@ -1222,23 +1241,10 @@ function FlightCard({
   const bst = cardDateObj ? isBST(cardDateObj) : isBST(new Date());
 
   const sharePdf = async () => {
-    const doc = makeCardPdf(card, rowGrossWeight, bst);
     const subject = [card.acReg.trim() || "AC", card.srp ? `SRP ${card.srp}` : null, card.date || "UNDATED"]
       .filter(Boolean)
       .join(" ");
-    const name = `${subject}.pdf`;
-    const blob = doc.output("blob");
-    const file = new File([blob], name, { type: "application/pdf" });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: subject, text: subject });
-    } else {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = name;
-      a.click();
-      URL.revokeObjectURL(url);
-    }
+    await shareDocPdf(makeCardPdf(card, rowGrossWeight, bst), `${subject}.pdf`);
   };
 
   const exportAndClear = async (carry = false) => {
@@ -2522,20 +2528,7 @@ async function shareTripPdf(r) {
   const date = `${two(now.getDate())}.${two(now.getMonth() + 1)}.${now.getFullYear()}`;
   const hhmm = `${two(now.getHours())}${two(now.getMinutes())}`;
   const doc = makeTripPdf(r, { version: APP_VERSION, buildDate: BUILD_DATE, stamp: `${date} ${hhmm}` });
-  const subject = `IFR FUEL ${r.trip.stops.join("-")} ${date} ${hhmm}`;
-  const name = `${subject}.pdf`;
-  const blob = doc.output("blob");
-  const file = new File([blob], name, { type: "application/pdf" });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    await navigator.share({ files: [file], title: subject, text: subject });
-  } else {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+  await shareDocPdf(doc, `IFR FUEL ${r.trip.stops.join("-")} ${date} ${hhmm}.pdf`);
 }
 
 const siteName = (st) => `${st.icao || st.short} ${st.name.toUpperCase()}`;
@@ -3560,23 +3553,6 @@ function makePowerCheckPdf(entry, jpeg, now = new Date()) {
 }
 const pcPdfName = (entry) =>
   `PC_${(entry.acReg || "AC").replace(/[^A-Z0-9-]/gi, "")}_${String(entry.dateZ || "").replace(/[^0-9.]/g, "")}_${String(entry.timeZ || "").replace(/[^0-9]/g, "")}Z.pdf`;
-
-// Same sharing as the card PDF: the share sheet, or a download where there is none.
-async function shareDocPdf(doc, name) {
-  const subject = name.replace(/\.pdf$/, "");
-  const blob = doc.output("blob");
-  const file = new File([blob], name, { type: "application/pdf" });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    await navigator.share({ files: [file], title: subject, text: subject });
-  } else {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-}
 
 // `keep` is owned by App: the check in progress lives there, so the DAY/NIGHT toggle (which remounts
 // every tab to re-read the palette) never clears figures that haven't been recorded yet.

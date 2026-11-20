@@ -367,3 +367,12 @@ should still be bumped every time.
   sheet (canShare false, or missing altogether) one `<a download>` link with the same name is clicked,
   its href is the PDF's blob URL, and that URL is released; the card still moves on to a new card.
   Before → after: tests 804 → 818; index.html 733,586 → 733,586 (gzip 238,429 → 238,429).
+- 20.11.2026 (v36) — Audit F4: one share function. The card PDF and the IFR plan PDF now call
+  `shareDocPdf(doc, name)` (moved to the top of the PDF section; it was the power check's): share sheet
+  with title = text = the name without ".pdf", else a download link. Names and subjects unchanged
+  (domtest32, all three PDFs, both paths); PDFs text-identical (domtest30).
+  Before → after: src/app.jsx 4,262 → 4,238 lines; build/app.js 732,226 → 731,639 bytes; index.html
+  733,586 → 732,999 (gzip 238,429 → 238,351); tests 818 → 818; Chrome check 27/27.
+  Audit batch 1 (v29–v36) overall, against v28: index.html 1,197,934 → 732,999 bytes (gzip 371,813 →
+  238,351); first render (§1.5 method, paired run, median of 7) 422 → 342 ms, first contentful paint
+  420 → 312 ms; tests 765 → 818.
