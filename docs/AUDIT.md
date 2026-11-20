@@ -114,7 +114,7 @@ Method: `esbuild src/app.jsx --bundle --minify --metafile` with the same flags a
 | File | Lines | Bytes |
 |---|---:|---:|
 | src/app.jsx | 4,252 | 177,304 |
-| src/app-v9-backup.jsx | 1,733 | 61,753 (dead: F3) |
+| src/app-v9-backup.jsx | 1,733 | 61,753 (dead: F3 — deleted in v33) |
 | src/fuelcalc.js | 329 | 18,043 |
 | src/service-worker.src.js | 222 | 9,528 |
 | src/powercheck.js | 138 | 10,088 (delivered file: do not edit) |

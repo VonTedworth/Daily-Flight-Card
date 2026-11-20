@@ -346,3 +346,8 @@ should still be bumped every time.
   Before → after: build/app.js 798,007 → 732,226 bytes; index.html 799,367 → 733,586 (gzip 258,513 →
   238,429); first render (paired, median of 7) 372 → 349 ms, first contentful paint 364 → 312 ms; PDFs
   text-identical, RFM JPEG still embedded (domtest30); tests 800 → 804; Chrome check 27/27.
+- 20.11.2026 (v33) — Audit F3: deleted `src/app-v9-backup.jsx` (1,733 lines, 61,753 bytes; a copy of
+  the v9 app that nothing imported; still in git history). Verified: `build/app.js` byte-identical with
+  and without the file at the same version (sha256 e3f52b1a…, 732,226 bytes), then the version bumped.
+  Before → after: src/ 4,252 + 1,733 → 4,252 app.jsx lines (backup gone); index.html 733,586 → 733,586
+  (gzip 238,429 → 238,428); tests 804 → 804.
