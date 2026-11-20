@@ -297,3 +297,9 @@ should still be bumped every time.
   89a45e6a…), `crew-guide-v1.pdf` deleted. `GUIDE_URL`, `GUIDE` and `GUIDE_CACHE` (`flightcard-guide-v2`) bumped
   together, so every phone downloads the new guide once (best-effort, after the shell) and the activate
   filter deletes `flightcard-guide-v1` (domtest21). UPLIFT link text: 40-slide crew guide.
+- 20.11.2026 (v27) — Bug fix (Ed): figures typed on PWR CHK were cleared when a ground run's
+  POWER CHECK? → YES started a check for that flight (every new context loaded a blank). Now, when
+  there is no recorded entry to load for the new row, an unrecorded check with figures typed in
+  (`pwrKeep.unrecorded` + `pcHasFigures`) is kept and just moves to that row (FOR: FLIGHT n), time
+  and all. RECORD and CANCEL clear `unrecorded`, so the next start is empty; tapping a recorded entry
+  still loads that entry. domtest26 section v27.

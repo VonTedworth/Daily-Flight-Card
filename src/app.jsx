@@ -88,7 +88,7 @@ const mono = "'IBM Plex Mono', ui-monospace, monospace";
 // confirm on the phone which build is actually live. BUILD_DATE is stamped
 // automatically by build_html.py at build time — always accurate even if a
 // version bump is forgotten, so the footer can never silently go stale.
-const APP_VERSION = "v26";
+const APP_VERSION = "v27";
 // The user guide (rendered on GitHub). Opening it needs signal; the app itself does not.
 const README_URL = "https://github.com/VonTedworth/Daily-Flight-Card/blob/main/README.md";
 // The crew guide (40-slide PDF), saved on the phone by the service worker (own cache, kept across
@@ -3200,6 +3200,14 @@ function pcBlank(info) {
     eng: [pcBlankEngine(), pcBlankEngine()],
   };
 }
+// Figures typed into a check. The automatic date/time, reg, SRP and site don't count; TQ and
+// elevation count only when changed from their defaults.
+const pcHasFigures = (s) =>
+  Boolean(
+    s &&
+      (s.oat || s.qnh || s.paIn || s.elev !== PC_DEFAULTS.elev ||
+        (s.eng || []).some((e) => e.itt || e.ng || e.xItt || e.xNg || e.rep || e.tq !== PC_DEFAULTS.tq))
+  );
 // A recorded (v2) entry back into editable strings.
 function pcFromEntry(p) {
   const s = (v) => (v === null || v === undefined ? "" : String(v));
@@ -3568,12 +3576,16 @@ function PowerCheck({ active, ctx, cardInfo, onRecord, onCancel, keep }) {
 
   // A new context (ground run YES, A/C DATA button, a tapped entry, or the tab bar with none):
   // load that row's v2 entry for editing, or start a fresh check timed now (UTC).
+  // v27: with no entry to load, a check in progress that has figures typed in and has not been
+  // recorded or cancelled (keep.unrecorded) is kept as it is and simply moves to the new row.
   // Legacy entries are never loaded — a fresh check replaces them on RECORD.
   useEffect(() => {
     if (!ctx || keep.seq === ctx.seq) return; // already set up (e.g. remounted by the theme toggle)
     keep.seq = ctx.seq;
     const info = infoRef.current || {};
     const ex = (info.powerChecks || []).find((p) => p && p.v === 2 && p.row === ctx.row);
+    if (!ex && keep.unrecorded && pcHasFigures(keep.st)) return; // figures, follow flags, drop-downs kept
+    keep.unrecorded = !ex; // a loaded entry is a recorded check: never carried to another row
     setSt(ex ? pcFromEntry(ex) : pcBlank(info));
     keep.follow = ex ? { acReg: !ex.acReg, srp: !ex.srp } : { acReg: true, srp: true };
     // a recorded check with cross-check figures opens that drop-down; otherwise it starts closed
@@ -4023,7 +4035,8 @@ function App() {
   const [pwrCtx, setPwrCtx] = useState(null);
   const pwrSeq = useRef(0);
   // The PWR CHK check in progress, kept here so the DAY/NIGHT toggle (which remounts the tabs) keeps it.
-  const pwrKeep = useRef({ seq: null, st: null, follow: { acReg: true, srp: true }, chartOpen: false, xOpen: false });
+  // unrecorded: the check on screen was started fresh and not yet recorded or cancelled (v27).
+  const pwrKeep = useRef({ seq: null, st: null, unrecorded: true, follow: { acReg: true, srp: true }, chartOpen: false, xOpen: false });
   const [pendingPowerCheck, setPendingPowerCheck] = useState(null);
   const [cardInfo, setCardInfo] = useState({ acReg: "", srp: "", powerChecks: [] });
 
@@ -4049,12 +4062,14 @@ function App() {
   // RECORD ON CARD: the v2 entry goes through the existing pendingPowerCheck path; back to the
   // tab it came from (A/C DATA for SRP-level, FLIGHTS for a flight).
   const handlePowerCheckRecord = (entry) => {
+    pwrKeep.current.unrecorded = false; // recorded: the next start begins empty (or loads an entry)
     setPendingPowerCheck(entry);
     setTab(entry.row === null ? "ac" : "card");
     setPwrCtx(null);
   };
 
   const handlePowerCheckCancel = () => {
+    pwrKeep.current.unrecorded = false; // CANCEL discards the check in progress
     setTab(pwrCtx && pwrCtx.row !== null ? "card" : "ac");
     setPwrCtx(null);
   };

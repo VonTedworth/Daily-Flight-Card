@@ -372,7 +372,42 @@ const zuluNow = () => { const d = new Date(), p = (n) => String(n).padStart(2, "
   T.click(T.q("[data-pc-record]")); await sleep(800);
   check("…and RECORD after the toggle saves those figures", T.saved().powerChecks[0].eng[1].rep.itt === "774" && T.saved().powerChecks[0].srp === "5555" && T.onAc());
 
-  check("no script errors in any run", [A, B, G, H, L, M, T].every((X) => X.errors.length === 0));
+  // ════════ v27: figures typed on PWR CHK survive the ground run → POWER CHECK? → YES ════════
+  const Y = open(card([mk({ fltTime: "25", shtdwn: "0930", fuel: "560" })]));
+  await sleep(2500);
+  Y.click(Y.tab("PWR CHK")); await sleep(200);
+  check("PWR CHK from the tab bar: FOR: THIS SRP", Y.tx("[data-pc-for]") === "FOR: THIS SRP");
+  await Y.fill({ ...EX, timeZ: "09:12", e1itt: "775" }); // ENG 2 PAM 0 → a 3-min repeat is offered
+  Y.click(Y.q('[data-pc-addrep="1"]')); await sleep(80);
+  await Y.fill({ e1ritt: "748", e1rng: "89.8", x0itt: "776" });
+  const ysnap = () => ["oat", "qnh", "timeZ", "e0itt", "e0ng", "e1itt", "e1ng", "e1ritt", "e1rng", "x0itt"].map((k) => (Y.pc(k) ? Y.pc(k).value : "∅")).join(",");
+  const y0 = ysnap();
+  Y.click(Y.tab("FLIGHTS")); await sleep(150);
+  const yflt = Y.qa("input").filter((i) => i.previousElementSibling?.textContent?.trim() === "FLT MIN");
+  await Y.type(yflt[1], "0"); await sleep(100);
+  check("ground run with nothing recorded yet still asks POWER CHECK?", Y.d.getElementById("root").textContent.includes("GROUND RUN — POWER CHECK?"));
+  Y.click(Y.btn("YES")); await sleep(250);
+  check(`YES → PWR CHK FOR: FLIGHT 2 with every typed figure kept (${ysnap()})`, Y.onPwr() && Y.tx("[data-pc-for]") === "FOR: FLIGHT 2" && ysnap() === y0);
+  Y.click(Y.q("[data-pc-record]")); await sleep(800);
+  const yp = Y.saved().powerChecks;
+  check("RECORD saves those figures against flight 2 (one entry), back on FLIGHTS",
+    yp.length === 1 && yp[0].row === 1 && yp[0].oat === "12" && yp[0].timeZ === "09:12" && yp[0].eng[0].itt === "745" && yp[0].eng[1].rep.itt === "748" && yp[0].eng[0].xItt === "776" && Y.onFlights());
+  // after RECORD, a new check starts empty
+  Y.click(Y.tab("A/C DATA")); await sleep(100);
+  Y.click(Y.btn("REDO POWER CHECK")); await sleep(200); // the A/C DATA button once a check is on the card
+  check("after RECORD, a new SRP check starts empty", Y.tx("[data-pc-for]") === "FOR: THIS SRP" && Y.pc("oat").value === "" && Y.pc("e0itt").value === "");
+  // CANCEL discards: figures typed then cancelled are not carried into the next start
+  await Y.fill({ oat: "9", e0itt: "700" });
+  Y.click(Y.q("[data-pc-cancel]")); await sleep(150);
+  Y.click(Y.tab("PWR CHK")); await sleep(200);
+  check("after CANCEL, the next start is empty", Y.pc("oat").value === "" && Y.pc("e0itt").value === "");
+  // a recorded entry, when tapped, still loads that entry (not the check in progress)
+  await Y.fill({ oat: "5", e0itt: "710" });
+  Y.click(Y.tab("A/C DATA")); await sleep(150);
+  Y.click(Y.q('[data-pc-entry="1"]')); await sleep(250);
+  check("tapping the recorded flight 2 check loads that check", Y.tx("[data-pc-for]") === "FOR: FLIGHT 2" && Y.pc("oat").value === "12" && Y.pc("e0itt").value === "745");
+
+  check("no script errors in any run", [A, B, G, H, L, M, T, Y].every((X) => X.errors.length === 0));
 
   let fail = 0;
   for (const [n, ok] of res) { console.log((ok ? "PASS" : "FAIL") + "  " + n); if (!ok) fail++; }
